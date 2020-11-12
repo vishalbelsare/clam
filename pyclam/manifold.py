@@ -266,6 +266,14 @@ class Cluster:
                 for cluster in layer.clusters
                 if self.name == cluster.name[:len(self.name)]]
 
+    @property
+    def subgraph_clusters(self) -> List['Cluster']:
+        """ All clusters in the subtree starting at self, including self.
+        """
+        return [cluster for layer in self.manifold.layers[self.depth:]
+                for cluster in layer.clusters
+                if self.name == cluster.name[:len(self.name)]]
+
     def clear_cache(self) -> None:
         """ Clears the cache for the cluster. """
         logging.debug(f'clearing cache for {self}')
@@ -275,6 +283,79 @@ class Cluster:
     def overlaps(self, point: Data, radius: Radius) -> bool:
         """ Checks if point is within radius + self.radius of cluster. """
         return self.distance_from(np.asarray([point]))[0] <= (self.radius + radius)
+
+    def as_dot_string(
+            self,
+            graph_name: str,
+            edge_constants: Optional[Tuple[str, int, int]] = None,
+            cluster_label: Optional[Callable] = None
+    ):
+        """ Returns the directed subgraph of the cluster as a dot-file string.
+
+        Each cluster and its label form a line.
+        Each edge forms a line.
+
+        The string produced can be used by GraphViz to visualize the Graph.
+
+        :param graph_name: the name of the graph in the dot file.
+        :param edge_constants: a 3-tuple of (style, penwidth, label_distance) common to all edges.
+        :param cluster_label: a function that takes a cluster and produces a label for that cluster.
+        :return: the dot-file as a string.
+        """
+        cache: bool = False
+        if (edge_constants is None) and (cluster_label is None):
+            # if these arguments are the default then add the dot-string to cache
+            cache = True
+            if 'dot_string' in self.cache:
+                return self.cache['dot_string']
+
+        # use default values if not explicitly given
+        style, penwidth, label_distance = 'solid', 5, 10 if edge_constants is None else edge_constants
+
+        if cluster_label is None:
+            # normalize lfd values in the subgraph so that 0.5 is equal parts red and blue,
+            # 1 is all red, and 0 is all blue
+            normalized_lfds: np.array = normalize(
+                values=np.asarray([cluster.local_fractal_dimension for cluster in self.subgraph_clusters],
+                                  dtype=float),
+                mode='gaussian',
+            )
+            colors: Dict[Cluster, str] = {  # dict of cluster -> hexadecimal string of rgb color
+                cluster: f'#{int(255 * lfd):02X}00{int(255 * (1 - lfd)):02X}'
+                for cluster, lfd in zip(self.subgraph_clusters, normalized_lfds)
+            }
+            def cluster_label(cluster: Cluster) -> str:
+                """ The default cluster label to use for dotfiles.
+
+                :param cluster: cluster for which to create a label
+                :return: a string label for the cluster
+                """
+                labels = '\\n'.join([
+                    f'cardinality {cluster.cardinality}',
+                    f'radius {cluster.radius:.8e}',
+                    f'lfd {cluster.local_fractal_dimension:.8e}'
+                ])
+                return f'label="{str(cluster)}\\n{labels}", color="{colors[cluster]}", style="filled"'
+
+        dot_file_lines: List[str] = [  # start the lines in the dot-file
+            f'digraph {graph_name} ' + '{',  # graph type and name
+            f'    edge[style={style}, penwidth="{penwidth}", labeldistance="{label_distance}"]'  # edge constants
+        ]
+        dot_file_lines.extend([  # add a line for each cluster
+            f'    {str(cluster)} [{cluster_label(cluster)}]'
+            for cluster in self.subgraph_clusters
+        ])
+        dot_file_lines.extend([  # add a line for each edge between parent/child clusters, directed and without label
+            f'    {str(cluster)} -> {str(child)}'
+            for cluster in self.subgraph_clusters for child in cluster.children
+        ])
+        dot_file_lines.append('}')  # closing bracket
+
+        dot_string: str = '\n'.join(dot_file_lines)
+        if cache:  # add to cache, as explained above
+            self.cache['dot_string'] = dot_string
+
+        return dot_string
 
     def _find_poles(self) -> List[int]:
         """ Poles are approximately the two farthest points in the cluster.
@@ -1045,6 +1126,44 @@ class Manifold:
 
         self.graphs = list()
         return self.add_graphs(*criterion)
+
+    def as_dot_string(
+            self,
+            graph_name: str,
+            edge_constants: Optional[Tuple[str, int, int]] = None,
+            cluster_label: Optional[Callable[[Cluster], str]] = None
+    ):
+        """ Returns the directed tree graph of a manifold (subgraph of the root cluster) as a dot-file string.
+
+        Each cluster and its label form a line.
+        Each edge and its label form a line.
+
+        The string produced can be used by GraphViz to visualize the Graph.
+
+        :param graph_name: the name of the graph in the dot file.
+        :param edge_constants: a 3-tuple of (style, penwidth, label_distance) common to all edges.
+        :param cluster_label: a function that takes a cluster and produces a label for that cluster.
+        :return: the dot-file as a string.
+        """
+        cache: bool = False
+        if (edge_constants is None) and (cluster_label is None):
+            # if these arguments are the default then add the dot-string to cache
+            cache = True
+            if 'dot_string' in self.cache:
+                return self.cache['dot_string']
+
+        # getting the subgraph of the root, or the graph of the entire manifold, with the parameters above
+        # inputted in place of the default values
+        dot_string = self.root.as_dot_string(
+            graph_name=graph_name,
+            edge_constants=edge_constants,
+            cluster_label=cluster_label
+        )
+
+        if cache:  # add to cache, as explained above
+            self.cache['dot_string'] = dot_string
+
+            return dot_string
 
     def _partition_single(self, criterion) -> List[Cluster]:
         # TODO: Consider removing and only keeping multi-threaded version
