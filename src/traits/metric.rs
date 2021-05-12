@@ -178,8 +178,8 @@ impl<T: Number, U: Number> Metric<T, U> for Hamming {
     fn decode(&self, x: &ArrayView<T, IxDyn>, y: &Vec<u8>) -> Result<Array<T, IxDyn>, String> {
         let mut x = x.to_owned();
         let step = (8 + T::num_bytes()) as usize;
-        y.iter().enumerate().step_by(step).for_each(|(i, _)| {
-            let (index, value) = y[i..(i + step)].split_at(std::mem::size_of::<u64>());
+        y.chunks(step).for_each(|chunk| {
+            let (index, value) = chunk.split_at(std::mem::size_of::<u64>());
             let index = u64::from_be_bytes(index.try_into().unwrap()) as usize;
             x[index] = T::from_bytes(&value.to_vec());
         });
