@@ -155,12 +155,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
 
     /// Returns the indices of two maximally separated instances in the Cluster.
     fn poles(&self) -> (Index, Index) {
-        let indices = self
-            .indices
-            .par_iter()
-            .filter(|&&i| i != self.argradius)
-            .cloned()
-            .collect();
+        let indices = self.indices.par_iter().filter(|&&i| i != self.argradius).cloned().collect();
         let distances = self.dataset.distances_from(self.argradius, &indices);
         let (farthest, _) = argmax(&distances);
         (self.argradius, indices[farthest])
@@ -175,7 +170,6 @@ impl<T: Number, U: Number> Cluster<T, U> {
     /// * `partition_criteria`: A reference to `Vec<PartitionCriterion>`.
     ///   Each `Criterion` must evaluate to `true` otherwise the `Cluster`
     ///   cannot be partitioned.
-    #[allow(clippy::ptr_arg)]
     pub fn partition(self, criteria: &Vec<PartitionCriterion<T, U>>) -> Cluster<T, U> {
         // Cannot partition a singleton cluster.
         if self.is_singleton() {
@@ -197,11 +191,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
             .partition(|&&i| self.dataset.distance(left, i) <= self.dataset.distance(i, right));
 
         // Ensure that left cluster is more populated than right cluster.
-        let (left, right) = if right.len() > left.len() {
-            (right, left)
-        } else {
-            (left, right)
-        };
+        let (left, right) = if right.len() > left.len() { (right, left) } else { (left, right) };
 
         // Recursively apply partition to child clusters.
         let (left, right) = rayon::join(
@@ -223,13 +213,22 @@ impl<T: Number, U: Number> Cluster<T, U> {
         }
     }
 
+    pub fn flatten_tree(&self) -> Vec<Arc<Cluster<T, U>>> {
+        match self.children.borrow() {
+            Some((left, right)) => {
+                let mut descendants = vec![Arc::clone(&left), Arc::clone(&right)];
+                descendants.append(&mut left.flatten_tree());
+                descendants.append(&mut right.flatten_tree());
+                descendants
+            }
+            None => vec![],
+        }
+    }
+
     /// Returns the number of clusters in the subtree rooted at
     /// this cluster (excluding this cluster).
     pub fn num_descendants(&self) -> usize {
-        match self.children.borrow() {
-            Some((left, right)) => left.num_descendants() + right.num_descendants() + 2,
-            None => 0,
-        }
+        self.flatten_tree().len()
     }
 
     /// Returns unique samples from among Cluster.indices.
@@ -275,7 +274,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
 mod tests {
     use std::sync::Arc;
 
-    use ndarray::{arr2, Array2};
+    use ndarray::prelude::*;
 
     use crate::dataset::RowMajor;
     use crate::prelude::*;
@@ -283,12 +282,10 @@ mod tests {
     #[test]
     fn test_cluster() {
         let data: Array2<f64> = arr2(&[[0., 0., 0.], [1., 1., 1.], [2., 2., 2.], [3., 3., 3.]]);
-        let dataset: Arc<dyn Dataset<f64, f64>> =
-            Arc::new(RowMajor::<f64, f64>::new(data, "euclidean", false).unwrap());
+        let dataset: Arc<dyn Dataset<f64, f64>> = Arc::new(RowMajor::<f64, f64>::new(data, "euclidean", false).unwrap());
         let criteria = vec![criteria::max_depth(3), criteria::min_cardinality(1)];
-        let cluster = Cluster::new(Arc::clone(&dataset), 1, dataset.indices().clone()).partition(&criteria);
+        let cluster = Cluster::new(Arc::clone(&dataset), 1, dataset.indices()).partition(&criteria);
 
-        assert_eq!(cluster, cluster);
         assert_eq!(cluster.depth(), 0);
         assert_eq!(cluster.cardinality, 4);
         assert_eq!(cluster.num_descendants(), 6);

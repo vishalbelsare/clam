@@ -97,30 +97,16 @@ pub fn read_ann_data<T: Number, U: Number>(name: &str) -> Result<(Array2<T>, Arr
     Ok((train, test))
 }
 
-#[allow(clippy::ptr_arg)]
 pub fn argmin<T: Number>(values: &Vec<T>) -> (Index, T) {
-    values.iter().enumerate().fold(
-        (0, values[0]),
-        |(i_min, v_min), (i, &v)| {
-            if v < v_min {
-                (i, v)
-            } else {
-                (i_min, v_min)
-            }
-        },
-    )
+    values
+        .iter()
+        .enumerate()
+        .fold((0, values[0]), |(i_min, v_min), (i, &v)| if v < v_min { (i, v) } else { (i_min, v_min) })
 }
 
-#[allow(clippy::ptr_arg)]
 pub fn argmax<T: Number>(values: &Vec<T>) -> (Index, T) {
-    values.iter().enumerate().fold(
-        (0, values[0]),
-        |(i_max, v_max), (i, &v)| {
-            if v > v_max {
-                (i, v)
-            } else {
-                (i_max, v_max)
-            }
-        },
-    )
+    values
+        .iter()
+        .enumerate()
+        .fold((0, values[0]), |(i_max, v_max), (i, &v)| if v > v_max { (i, v) } else { (i_max, v_max) })
 }

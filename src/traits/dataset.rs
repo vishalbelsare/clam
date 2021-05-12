@@ -10,28 +10,20 @@
 //! * Molecular graphs with Tanamoto distance.
 
 use std::collections::HashMap;
-use std::fmt::Debug;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::{fmt, result};
 
 use ndarray::prelude::*;
 use rand::seq::IteratorRandom;
 use rayon::prelude::*;
 
+use crate::metric::metric_new;
 use crate::prelude::*;
 
 /// All datasets supplied to `CLAM` must implement this trait.
-///
-/// The `cache` for a dataset is optional.
-/// It is meant to function as a memo-table and can save significant time
-/// when the `Metric` used is computationally expensive.
-pub trait Dataset<T, U>: Debug + Send + Sync {
-    /// Returns the name of the metric used to compute the distance between instances.
-    ///
-    /// Warning: This name must be available in the distances crate.
-    ///
-    /// TODO: change this return type to a closure?
-    fn metric(&self) -> Metric<T, U>; // should this return the function directly?
+pub trait Dataset<T, U>: std::fmt::Debug + Send + Sync {
+    /// Returns the function used to compute the distance between instances.
+    fn metric(&self) -> Arc<dyn Metric<T, U>>; // should this return the function directly?
 
     /// Returns the number of instances in the dataset.
     fn ninstances(&self) -> usize;
@@ -74,7 +66,6 @@ pub trait Dataset<T, U>: Debug + Send + Sync {
     ///
     /// * `left` - Index of the instance to compute distances from
     /// * `right` - Indices of the instances to compute distances to
-    #[allow(clippy::ptr_arg)]
     fn distances_from(&self, left: Index, right: &Indices) -> Vec<U>;
 
     /// Returns distances from the instances with indices in left to the instances
@@ -84,7 +75,6 @@ pub trait Dataset<T, U>: Debug + Send + Sync {
     ///
     /// * `left` - Indices of instances
     /// * `right` - Indices of instances
-    #[allow(clippy::ptr_arg)]
     fn distances_among(&self, left: &Indices, right: &Indices) -> Vec<Vec<U>>;
 
     /// Returns the pairwise distances between the instances at the given indices.
@@ -92,17 +82,7 @@ pub trait Dataset<T, U>: Debug + Send + Sync {
     /// # Arguments
     ///
     /// * `indices` - Indices of instances among which to compute pairwise distances.
-    #[allow(clippy::ptr_arg)]
     fn pairwise_distances(&self, indices: &Indices) -> Vec<Vec<U>>;
-
-    /// Clears the dataset cache.
-    fn clear_cache(&self) {}
-
-    /// Returns the size of the cache used for the dataset.
-    ///
-    /// If no cache is used, return None.
-    /// Otherwise, return the number of entries in the cache.
-    fn cache_size(&self) -> Option<usize>;
 }
 
 /// RowMajor represents a dataset stored as a 2-dimensional array
@@ -125,7 +105,7 @@ pub struct RowMajor<T: Number, U: Number> {
     pub use_cache: bool,
 
     // The stored function, used to compute distances.
-    pub metric: Metric<T, U>,
+    pub metric: Arc<dyn Metric<T, U>>,
 
     // The internal cache.
     cache: Mutex<HashMap<(Index, Index), U>>,
@@ -158,12 +138,22 @@ impl<T: Number, U: Number> RowMajor<T, U> {
             cache: Mutex::new(HashMap::new()),
         })
     }
+
+    /// Clears the internal cache.
+    pub fn clear_cache(&self) {
+        self.cache.lock().unwrap().clear()
+    }
+
+    /// Returns the number of elements in the internal cache.
+    pub fn cache_size(&self) -> Option<usize> {
+        Some(self.cache.lock().unwrap().len())
+    }
 }
 
 impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
     /// Return the metric name for the dataset.
-    fn metric(&self) -> Metric<T, U> {
-        self.metric
+    fn metric(&self) -> Arc<dyn Metric<T, U>> {
+        Arc::clone(&self.metric)
     }
 
     /// Returns the number of rows in the dataset.
@@ -190,7 +180,6 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
     ///
     /// Returns `n` unique random indices from the provided vector.
     /// If `n` is greater than the number of indices provided, the full list is returned in shuffled order.
-    #[allow(clippy::ptr_arg)]
     fn choose_unique(&self, indices: Indices, n: usize) -> Indices {
         // TODO: actually check for uniqueness among choices
         indices.into_iter().choose_multiple(&mut rand::thread_rng(), n)
@@ -203,7 +192,7 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
         } else {
             let key = if left < right { (left, right) } else { (right, left) };
             if !self.cache.lock().unwrap().contains_key(&key) {
-                let distance = (self.metric)(&self.data.row(left).into_dyn(), &self.data.row(right).into_dyn());
+                let distance = self.metric.distance(&self.data.row(left).into_dyn(), &self.data.row(right).into_dyn());
                 self.cache.lock().unwrap().insert(key, distance);
                 distance
             } else {
@@ -213,34 +202,19 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
     }
 
     /// Compute the distances from `left` to all points in `right`.
-    #[allow(clippy::ptr_arg)]
     fn distances_from(&self, left: Index, right: &Indices) -> Vec<U> {
         right.par_iter().map(|&r| self.distance(left, r)).collect::<Vec<U>>()
     }
 
     /// Compute distances between all points in `left` and `right`.
-    #[allow(clippy::ptr_arg)]
     fn distances_among(&self, left: &Indices, right: &Indices) -> Vec<Vec<U>> {
-        left.par_iter()
-            .map(|&l| self.distances_from(l, right))
-            .collect::<Vec<Vec<U>>>()
+        left.par_iter().map(|&l| self.distances_from(l, right)).collect::<Vec<Vec<U>>>()
     }
 
     /// Compute the pairwise distance between all points in `indices`.
-    #[allow(clippy::ptr_arg)]
     fn pairwise_distances(&self, indices: &Indices) -> Vec<Vec<U>> {
         // TODO: Optimize this to only make distance calls for lower triangular matrix
         self.distances_among(indices, indices)
-    }
-
-    /// Clears the internal cache.
-    fn clear_cache(&self) {
-        self.cache.lock().unwrap().clear()
-    }
-
-    /// Returns the number of elements in the internal cache.
-    fn cache_size(&self) -> Option<usize> {
-        Some(self.cache.lock().unwrap().len())
     }
 }
 

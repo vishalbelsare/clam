@@ -1,7 +1,6 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::{fmt, result};
 
 use ndarray::prelude::*;
 use rayon::prelude::*;
@@ -35,11 +34,11 @@ pub struct Cakes<T: Number, U: Number> {
     root: Arc<Cluster<T, U>>,
 
     /// The distance function being used.
-    metric: Metric<T, U>,
+    metric: Arc<dyn Metric<T, U>>,
 }
 
-impl<T: Number, U: Number> fmt::Debug for Cakes<T, U> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+impl<T: Number, U: Number> std::fmt::Debug for Cakes<T, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
         f.debug_struct("Search").field("dataset", &self.dataset).finish()
     }
 }
@@ -53,11 +52,7 @@ impl<T: Number, U: Number> Cakes<T, U> {
     /// * `max_depth` - Clusters in the tree that have a higher depth will not be partitioned.
     ///                 Capped at 63 until I feel like bothering with bit-vectors.
     /// * `min_cardinality` - Clusters in the tree that have a smaller cardinality will not be partitioned.
-    pub fn build(
-        dataset: Arc<dyn Dataset<T, U>>,
-        max_depth: Option<u8>,
-        min_cardinality: Option<usize>,
-    ) -> Cakes<T, U> {
+    pub fn build(dataset: Arc<dyn Dataset<T, U>>, max_depth: Option<u8>, min_cardinality: Option<usize>) -> Cakes<T, U> {
         // parse the max-depth and min-cardinality and create the partition-criterion.
         let criteria = vec![
             criteria::max_depth(std::cmp::min(max_depth.unwrap_or(63), 63)),
@@ -89,7 +84,7 @@ impl<T: Number, U: Number> Cakes<T, U> {
         // parse the search radius
         let radius = radius.unwrap_or_else(U::zero);
         // if query ball has overlapping volume with the root, delegate to the recursive, private method.
-        if (self.metric)(&self.root.center(), query) <= (radius + self.root.radius) {
+        if self.metric.distance(&self.root.center(), query) <= (radius + self.root.radius) {
             self._tree_search(&self.root, query, radius)
         } else {
             // otherwise, return an empty Vec signifying no possible hits.
@@ -137,12 +132,7 @@ impl<T: Number, U: Number> Cakes<T, U> {
     /// Exhaustively searches the clusters identified by tree-search and
     /// returns a HashMap of all hits and their distance from the query.
     pub fn leaf_search(&self, query: &ArrayView<T, IxDyn>, radius: Option<U>, clusters: ClusterHits<T, U>) -> Hits<U> {
-        let indices = clusters
-            .iter()
-            .map(|c| c.indices.clone())
-            .into_iter()
-            .flatten()
-            .collect::<Indices>();
+        let indices = clusters.iter().map(|c| c.indices.clone()).into_iter().flatten().collect::<Indices>();
         self.linear_search(query, radius, Some(indices))
     }
 
@@ -159,7 +149,7 @@ impl<T: Number, U: Number> Cakes<T, U> {
 
     // A convenient wrapper to get the distance from a given query to an indexed instance in the dataset.
     fn query_distance(&self, query: &ArrayView<T, IxDyn>, index: Index) -> U {
-        (self.metric)(query, &self.dataset.instance(index))
+        self.metric.distance(query, &self.dataset.instance(index))
     }
 }
 
@@ -206,12 +196,7 @@ mod tests {
 
         let search = Cakes::build(Arc::clone(&dataset), Some(50), None);
 
-        let search_str = [
-            "Search { ".to_string(),
-            format!("dataset: {:?}", dataset),
-            " }".to_string(),
-        ]
-        .join("");
+        let search_str = ["Search { ".to_string(), format!("dataset: {:?}", dataset), " }".to_string()].join("");
         assert_eq!(format!("{:?}", search), search_str);
 
         let radius = Some(search.diameter() / 100.);
@@ -219,24 +204,14 @@ mod tests {
         for &q in dataset.indices()[0..10].iter() {
             let query = dataset.instance(q);
 
-            let cakes_results = search.rnn(&query, radius.clone());
-            let naive_results = search.linear_search(&query, radius.clone(), None);
+            let cakes_results = search.rnn(&query, radius);
+            let naive_results = search.linear_search(&query, radius, None);
 
             let no_extra = cakes_results.iter().all(|(i, _)| naive_results.contains_key(i));
-            assert!(
-                no_extra,
-                "had some extras {} / {}",
-                naive_results.len(),
-                cakes_results.len()
-            );
+            assert!(no_extra, "had some extras {} / {}", naive_results.len(), cakes_results.len());
 
             let no_misses = naive_results.iter().all(|(i, _)| cakes_results.contains_key(i));
-            assert!(
-                no_misses,
-                "had some misses {} / {}",
-                naive_results.len(),
-                cakes_results.len()
-            );
+            assert!(no_misses, "had some misses {} / {}", naive_results.len(), cakes_results.len());
         }
     }
 }
