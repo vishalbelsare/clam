@@ -21,7 +21,7 @@ use crate::metric::metric_new;
 use crate::prelude::*;
 
 /// All datasets supplied to `CLAM` must implement this trait.
-pub trait Dataset<T, U>: std::fmt::Debug + Send + Sync {
+pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     /// Returns the function used to compute the distance between instances.
     fn metric(&self) -> Arc<dyn Metric<T, U>>; // should this return the function directly?
 
@@ -50,7 +50,10 @@ pub trait Dataset<T, U>: std::fmt::Debug + Send + Sync {
     /// * `indices`:
     ///   - Some - Select unique n from given indices.
     ///   - None - Select unique n from all indices.
-    fn choose_unique(&self, indices: Indices, n: usize) -> Indices;
+    fn choose_unique(&self, indices: Indices, n: usize) -> Indices {
+        // TODO: actually check for uniqueness among choices
+        indices.into_iter().choose_multiple(&mut rand::thread_rng(), n)
+    }
 
     /// Returns the distance between the two instances at the indices provided.
     ///
@@ -66,7 +69,11 @@ pub trait Dataset<T, U>: std::fmt::Debug + Send + Sync {
     ///
     /// * `left` - Index of the instance to compute distances from
     /// * `right` - Indices of the instances to compute distances to
-    fn distances_from(&self, left: Index, right: &Indices) -> Vec<U>;
+    ///
+    /// TODO: Return Array1 instead of Vec
+    fn distances_from(&self, left: Index, right: &Indices) -> Vec<U> {
+        right.par_iter().map(|&r| self.distance(left, r)).collect()
+    }
 
     /// Returns distances from the instances with indices in left to the instances
     /// with indices in right.
@@ -75,14 +82,23 @@ pub trait Dataset<T, U>: std::fmt::Debug + Send + Sync {
     ///
     /// * `left` - Indices of instances
     /// * `right` - Indices of instances
-    fn distances_among(&self, left: &Indices, right: &Indices) -> Vec<Vec<U>>;
+    ///
+    /// TODO: Return Array2 instead of Vec<Vec>
+    fn distances_among(&self, left: &Indices, right: &Indices) -> Vec<Vec<U>> {
+        left.par_iter().map(|&l| self.distances_from(l, right)).collect()
+    }
 
     /// Returns the pairwise distances between the instances at the given indices.
     ///
     /// # Arguments
     ///
     /// * `indices` - Indices of instances among which to compute pairwise distances.
-    fn pairwise_distances(&self, indices: &Indices) -> Vec<Vec<U>>;
+    ///
+    /// TODO: Return Array2 instead of Vec<Vec>
+    fn pairwise_distances(&self, indices: &Indices) -> Vec<Vec<U>> {
+        // TODO: Optimize this to only make distance calls for lower triangular matrix
+        self.distances_among(indices, indices)
+    }
 }
 
 /// RowMajor represents a dataset stored as a 2-dimensional array
@@ -176,15 +192,6 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
         self.data.index_axis(Axis(0), i).into_dyn()
     }
 
-    /// Return a random selection of unique indices.
-    ///
-    /// Returns `n` unique random indices from the provided vector.
-    /// If `n` is greater than the number of indices provided, the full list is returned in shuffled order.
-    fn choose_unique(&self, indices: Indices, n: usize) -> Indices {
-        // TODO: actually check for uniqueness among choices
-        indices.into_iter().choose_multiple(&mut rand::thread_rng(), n)
-    }
-
     /// Compute the distance between `left` and `right`.
     fn distance(&self, left: Index, right: Index) -> U {
         if left == right {
@@ -199,22 +206,6 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
                 *self.cache.lock().unwrap().get(&key).unwrap()
             }
         }
-    }
-
-    /// Compute the distances from `left` to all points in `right`.
-    fn distances_from(&self, left: Index, right: &Indices) -> Vec<U> {
-        right.par_iter().map(|&r| self.distance(left, r)).collect::<Vec<U>>()
-    }
-
-    /// Compute distances between all points in `left` and `right`.
-    fn distances_among(&self, left: &Indices, right: &Indices) -> Vec<Vec<U>> {
-        left.par_iter().map(|&l| self.distances_from(l, right)).collect::<Vec<Vec<U>>>()
-    }
-
-    /// Compute the pairwise distance between all points in `indices`.
-    fn pairwise_distances(&self, indices: &Indices) -> Vec<Vec<U>> {
-        // TODO: Optimize this to only make distance calls for lower triangular matrix
-        self.distances_among(indices, indices)
     }
 }
 

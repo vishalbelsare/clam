@@ -10,7 +10,7 @@ use crate::prelude::*;
 // Instances in a `CompressibleDataset` can be endoced in terms of each other to
 // produce compressed encodings represented as bytes.
 // Those bytes can also be used to decode an encoded instance by using the reference.
-pub trait CompressibleDataset<T, U>: Dataset<T, U> {
+pub trait CompressibleDataset<T: Number, U: Number>: Dataset<T, U> {
     /// Get a reference as a regular `Dataset`.
     fn as_dataset(&self) -> &dyn Dataset<T, U>;
 
