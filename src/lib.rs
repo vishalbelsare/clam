@@ -1,5 +1,3 @@
-#![allow(clippy::ptr_arg)]
-
 pub use crate::anomaly::Chaoda;
 pub use crate::core::{criteria, Cluster, Edge, Graph, Manifold};
 pub use crate::search::{codec, Cakes, CompressibleDataset};

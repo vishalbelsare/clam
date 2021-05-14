@@ -39,7 +39,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     ///
     /// * `index` - The index of the instance to return from the dataset.
     ///
-    fn instance(&self, index: Index) -> ArrayView<T, IxDyn>;
+    fn instance(&self, index: Index) -> Vec<T>;
 
     /// Returns `n` unique instances from the given indices and returns their indices.
     ///
@@ -70,7 +70,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     /// * `right` - Indices of the instances to compute distances to
     ///
     /// TODO: Return Array1 instead of Vec
-    fn distances_from(&self, left: Index, right: &Indices) -> Vec<U> {
+    fn distances_from(&self, left: Index, right: &[Index]) -> Vec<U> {
         right.par_iter().map(|&r| self.distance(left, r)).collect()
     }
 
@@ -83,7 +83,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     /// * `right` - Indices of instances
     ///
     /// TODO: Return Array2 instead of Vec<Vec>
-    fn distances_among(&self, left: &Indices, right: &Indices) -> Vec<Vec<U>> {
+    fn distances_among(&self, left: &[Index], right: &[Index]) -> Vec<Vec<U>> {
         left.par_iter().map(|&l| self.distances_from(l, right)).collect()
     }
 
@@ -94,7 +94,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     /// * `indices` - Indices of instances among which to compute pairwise distances.
     ///
     /// TODO: Return Array2 instead of Vec<Vec>
-    fn pairwise_distances(&self, indices: &Indices) -> Vec<Vec<U>> {
+    fn pairwise_distances(&self, indices: &[Index]) -> Vec<Vec<U>> {
         // TODO: Optimize this to only make distance calls for lower triangular matrix
         self.distances_among(indices, indices)
     }
@@ -187,8 +187,8 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
     }
 
     /// Return the row at the provided index.
-    fn instance(&self, i: Index) -> ArrayView<T, IxDyn> {
-        self.data.index_axis(Axis(0), i).into_dyn()
+    fn instance(&self, i: Index) -> Vec<T> {
+        self.data.index_axis(Axis(0), i).to_vec()
     }
 
     /// Compute the distance between `left` and `right`.
@@ -198,7 +198,7 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
         } else {
             let key = if left < right { (left, right) } else { (right, left) };
             if !self.cache.lock().unwrap().contains_key(&key) {
-                let distance = self.metric.distance(&self.data.row(left).into_dyn(), &self.data.row(right).into_dyn());
+                let distance = self.metric.distance(&self.instance(left), &self.instance(right));
                 self.cache.lock().unwrap().insert(key, distance);
                 distance
             } else {
@@ -222,7 +222,7 @@ mod tests {
         let row_0 = array![1., 2., 3.].into_dyn();
         let dataset = RowMajor::new(data, "euclidean", false).unwrap();
         assert_eq!(dataset.cardinality(), 2);
-        assert_eq!(dataset.instance(0), row_0,);
+        assert_eq!(dataset.instance(0), row_0.as_slice().unwrap());
 
         approx_eq!(f64, dataset.distance(0, 0), 0.);
         approx_eq!(f64, dataset.distance(0, 1), 3.);

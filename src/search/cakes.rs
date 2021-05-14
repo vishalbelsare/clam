@@ -2,7 +2,6 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ndarray::prelude::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -75,12 +74,12 @@ impl<T: Number, U: Number> Cakes<T, U> {
 
     /// Performs accelerated rho-nearest search on the dataset and
     /// returns all hits inside a sphere of the given `radius` centered at the requested `query`.
-    pub fn rnn(&self, query: &ArrayView<T, IxDyn>, radius: Option<U>) -> Hits<U> {
+    pub fn rnn(&self, query: &[T], radius: Option<U>) -> Hits<U> {
         self.leaf_search(&query, radius, self.tree_search(&query, radius))
     }
 
     /// Performs coarse-grained tree-search to find all clusters that could potentially contain hits.
-    pub fn tree_search(&self, query: &ArrayView<T, IxDyn>, radius: Option<U>) -> ClusterHits<T, U> {
+    pub fn tree_search(&self, query: &[T], radius: Option<U>) -> ClusterHits<T, U> {
         // parse the search radius
         let radius = radius.unwrap_or_else(U::zero);
         // if query ball has overlapping volume with the root, delegate to the recursive, private method.
@@ -93,7 +92,7 @@ impl<T: Number, U: Number> Cakes<T, U> {
     }
 
     //noinspection DuplicatedCode
-    fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &ArrayView<T, IxDyn>, radius: U) -> ClusterHits<T, U> {
+    fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &[T], radius: U) -> ClusterHits<T, U> {
         // Invariant: Entering this function means that the current cluster has overlapping volume with the query-ball.
         // Invariant: Triangle-inequality guarantees exactness of results from each recursive call.
         match cluster.children.borrow() {
@@ -131,13 +130,13 @@ impl<T: Number, U: Number> Cakes<T, U> {
 
     /// Exhaustively searches the clusters identified by tree-search and
     /// returns a HashMap of all hits and their distance from the query.
-    pub fn leaf_search(&self, query: &ArrayView<T, IxDyn>, radius: Option<U>, clusters: ClusterHits<T, U>) -> Hits<U> {
+    pub fn leaf_search(&self, query: &[T], radius: Option<U>, clusters: ClusterHits<T, U>) -> Hits<U> {
         let indices = clusters.iter().map(|c| c.indices.clone()).into_iter().flatten().collect::<Indices>();
         self.linear_search(query, radius, Some(indices))
     }
 
     /// Naive search. Useful for leaf-search and for measuring acceleration from entropy-scaling search.
-    pub fn linear_search(&self, query: &ArrayView<T, IxDyn>, radius: Option<U>, indices: Option<Indices>) -> Hits<U> {
+    pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: Option<Indices>) -> Hits<U> {
         let radius = radius.unwrap_or_else(U::zero);
         let indices = indices.unwrap_or_else(|| self.dataset.indices());
         indices
@@ -148,7 +147,7 @@ impl<T: Number, U: Number> Cakes<T, U> {
     }
 
     // A convenient wrapper to get the distance from a given query to an indexed instance in the dataset.
-    fn query_distance(&self, query: &ArrayView<T, IxDyn>, index: Index) -> U {
+    fn query_distance(&self, query: &[T], index: Index) -> U {
         self.metric.distance(query, &self.dataset.instance(index))
     }
 }
@@ -171,9 +170,8 @@ mod tests {
         let dataset: Arc<dyn Dataset<f64, f64>> = Arc::new(RowMajor::new(data, "euclidean", false).unwrap());
         let search = Cakes::build(Arc::clone(&dataset), None, None);
 
-        let q = arr1(&[0., 1.]);
-        let query: ArrayView<f64, IxDyn> = q.view().into_dyn();
-        let results = search.rnn(&query, Some(1.5));
+        let query = &[0., 1.];
+        let results = search.rnn(query, Some(1.5));
         assert_eq!(results.len(), 2);
         assert!(results.contains_key(&0));
         assert!(results.contains_key(&1));

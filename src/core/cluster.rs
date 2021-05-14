@@ -6,7 +6,6 @@ use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use ndarray::prelude::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -122,7 +121,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
     ///
     /// TODO: Change the type of `Instance` to something generic.
     /// Ideally, something implementing an `Instance` trait so that `Dataset` becomes a collection of `Instances`.
-    pub fn center(&self) -> ArrayView<T, IxDyn> {
+    pub fn center(&self) -> Vec<T> {
         self.dataset.instance(self.argcenter)
     }
 
@@ -154,7 +153,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
 
     /// Returns the indices of two maximally separated instances in the Cluster.
     fn poles(&self) -> (Index, Index) {
-        let indices = self.indices.par_iter().filter(|&&i| i != self.argradius).cloned().collect();
+        let indices: Indices = self.indices.par_iter().filter(|&&i| i != self.argradius).cloned().collect();
         let distances = self.dataset.distances_from(self.argradius, &indices);
         let (farthest, _) = argmax(&distances);
         (self.argradius, indices[farthest])
@@ -166,10 +165,10 @@ impl<T: Number, U: Number> Cluster<T, U> {
     ///
     /// # Arguments
     ///
-    /// * `partition_criteria`: A reference to `Vec<PartitionCriterion>`.
-    ///   Each `Criterion` must evaluate to `true` otherwise the `Cluster`
+    /// * `partition_criteria`: A collection of `PartitionCriterion`.
+    ///   Each `PartitionCriterion` must evaluate to `true` otherwise the `Cluster`
     ///   cannot be partitioned.
-    pub fn partition(self, criteria: &Vec<PartitionCriterion<T, U>>) -> Cluster<T, U> {
+    pub fn partition(self, criteria: &[PartitionCriterion<T, U>]) -> Cluster<T, U> {
         // Cannot partition a singleton cluster.
         if self.is_singleton() {
             return self;

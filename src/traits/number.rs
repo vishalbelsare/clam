@@ -22,7 +22,7 @@ pub trait Number: Num + NumCast + Sum + Copy + Clone + PartialOrd + Send + Sync 
     /// Reconstructs the Number from its vec of bytes.
     ///
     /// This must be the inverse of to_bytes.
-    fn from_bytes(bytes: &Vec<u8>) -> Self;
+    fn from_bytes(bytes: &[u8]) -> Self;
 }
 
 impl Number for f32 {
@@ -34,7 +34,7 @@ impl Number for f32 {
         self.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         let (value, _) = bytes.split_at(std::mem::size_of::<f32>());
         f32::from_be_bytes(value.try_into().unwrap())
     }
@@ -49,7 +49,7 @@ impl Number for f64 {
         self.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         let (value, _) = bytes.split_at(std::mem::size_of::<f64>());
         f64::from_be_bytes(value.try_into().unwrap())
     }
@@ -64,7 +64,7 @@ impl Number for u8 {
         vec![self]
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         bytes[0]
     }
 }
@@ -78,7 +78,7 @@ impl Number for u16 {
         self.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         let (value, _) = bytes.split_at(std::mem::size_of::<u16>());
         u16::from_be_bytes(value.try_into().unwrap())
     }
@@ -93,7 +93,7 @@ impl Number for u32 {
         self.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         let (value, _) = bytes.split_at(std::mem::size_of::<u32>());
         u32::from_be_bytes(value.try_into().unwrap())
     }
@@ -108,7 +108,7 @@ impl Number for u64 {
         self.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         let (value, _) = bytes.split_at(std::mem::size_of::<u64>());
         u64::from_be_bytes(value.try_into().unwrap())
     }
@@ -123,7 +123,7 @@ impl Number for i8 {
         self.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         let (value, _) = bytes.split_at(std::mem::size_of::<i8>());
         i8::from_be_bytes(value.try_into().unwrap())
     }
@@ -138,7 +138,7 @@ impl Number for i16 {
         self.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         let (value, _) = bytes.split_at(std::mem::size_of::<i16>());
         i16::from_be_bytes(value.try_into().unwrap())
     }
@@ -153,7 +153,7 @@ impl Number for i32 {
         self.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         let (value, _) = bytes.split_at(std::mem::size_of::<i32>());
         i32::from_be_bytes(value.try_into().unwrap())
     }
@@ -168,7 +168,7 @@ impl Number for i64 {
         self.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &Vec<u8>) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         let (value, _) = bytes.split_at(std::mem::size_of::<i64>());
         i64::from_be_bytes(value.try_into().unwrap())
     }

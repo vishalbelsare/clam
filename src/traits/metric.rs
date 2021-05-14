@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use ndarray::prelude::*;
 use num_traits::NumCast;
 
 use crate::Number;
@@ -19,13 +18,13 @@ pub trait Metric<T, U>: Send + Sync {
     fn name(&self) -> String;
 
     /// Returns the distance between two instances.
-    fn distance(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> U;
+    fn distance(&self, x: &[T], y: &[T]) -> U;
 
     /// Encodes the target instance in terms of the reference and produces a vec of bytes.
     ///
     /// This method is optional and so the default just returns an Err.
     #[allow(unused_variables)]
-    fn encode(&self, reference: &ArrayView<T, IxDyn>, target: &ArrayView<T, IxDyn>) -> Result<Vec<u8>, String> {
+    fn encode(&self, reference: &[T], target: &[T]) -> Result<Vec<u8>, String> {
         Err(format!("encode is not implemented for {:?}", self.name()))
     }
 
@@ -33,7 +32,7 @@ pub trait Metric<T, U>: Send + Sync {
     ///
     /// This method is optional and so the default just returns an Err.
     #[allow(unused_variables)]
-    fn decode(&self, reference: &ArrayView<T, IxDyn>, encoding: &Vec<u8>) -> Result<Array<T, IxDyn>, String> {
+    fn decode(&self, reference: &[T], encoding: &[u8]) -> Result<Vec<T>, String> {
         Err(format!("decode is not implemented for {:?}", self.name()))
     }
 }
@@ -76,7 +75,7 @@ impl<T: Number, U: Number> Metric<T, U> for Euclidean {
         "euclidean".to_string()
     }
 
-    fn distance(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> U {
+    fn distance(&self, x: &[T], y: &[T]) -> U {
         let d: T = x.iter().zip(y.iter()).map(|(&a, &b)| (a - b) * (a - b)).sum();
         let d: f64 = NumCast::from(d).unwrap();
         U::from(d.sqrt()).unwrap()
@@ -91,7 +90,7 @@ impl<T: Number, U: Number> Metric<T, U> for EuclideanSq {
         "euclideansq".to_string()
     }
 
-    fn distance(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> U {
+    fn distance(&self, x: &[T], y: &[T]) -> U {
         let d: T = x.iter().zip(y.iter()).map(|(&a, &b)| (a - b) * (a - b)).sum();
         U::from(d).unwrap()
     }
@@ -105,7 +104,7 @@ impl<T: Number, U: Number> Metric<T, U> for Manhattan {
         "manhattan".to_string()
     }
 
-    fn distance(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> U {
+    fn distance(&self, x: &[T], y: &[T]) -> U {
         let d: T = x.iter().zip(y.iter()).map(|(&a, &b)| if a > b { a - b } else { b - a }).sum();
         U::from(d).unwrap()
     }
@@ -114,7 +113,7 @@ impl<T: Number, U: Number> Metric<T, U> for Manhattan {
 /// Implements Cosine distance, 1 - cosine-similarity.
 pub struct Cosine;
 
-fn dot<T: Number>(x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> T {
+fn dot<T: Number>(x: &[T], y: &[T]) -> T {
     x.iter().zip(y.iter()).map(|(&a, &b)| a * b).sum()
 }
 
@@ -124,7 +123,7 @@ impl<T: Number, U: Number> Metric<T, U> for Cosine {
     }
 
     #[allow(clippy::suspicious_operation_groupings)]
-    fn distance(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> U {
+    fn distance(&self, x: &[T], y: &[T]) -> U {
         let xx = dot(x, x);
         if xx == T::zero() {
             return U::one();
@@ -154,12 +153,12 @@ impl<T: Number, U: Number> Metric<T, U> for Hamming {
         "hamming".to_string()
     }
 
-    fn distance(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> U {
+    fn distance(&self, x: &[T], y: &[T]) -> U {
         let d = x.iter().zip(y.iter()).filter(|(&a, &b)| a != b).count();
         U::from(d).unwrap()
     }
 
-    fn encode(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> Result<Vec<u8>, String> {
+    fn encode(&self, x: &[T], y: &[T]) -> Result<Vec<u8>, String> {
         let encoding = x
             .iter()
             .zip(y.iter())
@@ -175,7 +174,7 @@ impl<T: Number, U: Number> Metric<T, U> for Hamming {
         Ok(encoding)
     }
 
-    fn decode(&self, x: &ArrayView<T, IxDyn>, y: &Vec<u8>) -> Result<Array<T, IxDyn>, String> {
+    fn decode(&self, x: &[T], y: &[u8]) -> Result<Vec<T>, String> {
         let mut x = x.to_owned();
         let step = (8 + T::num_bytes()) as usize;
         y.chunks(step).for_each(|chunk| {
@@ -197,7 +196,7 @@ impl<T: Number, U: Number> Metric<T, U> for Jaccard {
         "jaccard".to_string()
     }
 
-    fn distance(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> U {
+    fn distance(&self, x: &[T], y: &[T]) -> U {
         if x.is_empty() || y.is_empty() {
             return U::one();
         }
@@ -223,8 +222,8 @@ mod tests {
     #[test]
     fn test_on_real() {
         let data: Array2<f64> = arr2(&[[1., 2., 3.], [3., 3., 1.]]);
-        let row0 = data.row(0).into_dyn();
-        let row1 = data.row(1).into_dyn();
+        let row0 = data.row(0).to_vec();
+        let row1 = data.row(1).to_vec();
 
         let metric = metric_new("euclideansq").unwrap();
         approx_eq!(f64, metric.distance(&row0, &row0), 0.);

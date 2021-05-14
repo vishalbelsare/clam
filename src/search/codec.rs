@@ -1,7 +1,5 @@
 //! Implements Compression and Decompression for `Datasets` and `Clusters`.
 
-use ndarray::prelude::*;
-
 use crate::dataset::RowMajor;
 use crate::prelude::*;
 
@@ -17,10 +15,10 @@ pub trait CompressibleDataset<T: Number, U: Number>: Dataset<T, U> {
     /// Encode one instance in terms of another.
     ///
     /// TODO: Think about whether to do this in terms of indices of instances.
-    fn encode(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> Result<Vec<u8>, String>;
+    fn encode(&self, x: &[T], y: &[T]) -> Result<Vec<u8>, String>;
 
     /// Decode an instance from the encoded bytes and the reference.
-    fn decode(&self, x: &ArrayView<T, IxDyn>, y: &Vec<u8>) -> Result<Array<T, IxDyn>, String>;
+    fn decode(&self, x: &[T], y: &[u8]) -> Result<Vec<T>, String>;
 }
 
 impl<T: Number, U: Number> CompressibleDataset<T, U> for RowMajor<T, U> {
@@ -28,11 +26,11 @@ impl<T: Number, U: Number> CompressibleDataset<T, U> for RowMajor<T, U> {
         self
     }
 
-    fn encode(&self, x: &ArrayView<T, IxDyn>, y: &ArrayView<T, IxDyn>) -> Result<Vec<u8>, String> {
+    fn encode(&self, x: &[T], y: &[T]) -> Result<Vec<u8>, String> {
         self.metric().encode(x, y)
     }
 
-    fn decode(&self, x: &ArrayView<T, IxDyn>, y: &Vec<u8>) -> Result<Array<T, IxDyn>, String> {
+    fn decode(&self, x: &[T], y: &[u8]) -> Result<Vec<T>, String> {
         self.metric().decode(x, y)
     }
 }
@@ -56,7 +54,7 @@ mod tests {
 
         let encoded = dataset.encode(&row0, &row1).unwrap();
         let decoded = dataset.decode(&row0, &encoded).unwrap();
-        let decoded = decoded.view();
+        let decoded = &decoded[..];
 
         assert_eq!(row1, decoded);
     }
