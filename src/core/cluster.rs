@@ -3,7 +3,6 @@
 //! Define and implement the `Cluster` struct.
 
 use std::borrow::Borrow;
-use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -78,8 +77,8 @@ impl<T: Number, U: Number> Hash for Cluster<T, U> {
     }
 }
 
-impl<T: Number, U: Number> fmt::Display for Cluster<T, U> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl<T: Number, U: Number> std::fmt::Display for Cluster<T, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.name)
     }
 }

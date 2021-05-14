@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -32,8 +31,8 @@ impl<T: Number, U: Number> PartialEq for Edge<T, U> {
 
 impl<T: Number, U: Number> Eq for Edge<T, U> {}
 
-impl<T: Number, U: Number> fmt::Display for Edge<T, U> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl<T: Number, U: Number> std::fmt::Display for Edge<T, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:} -- {:}, {:}", self.left.name, self.right.name, self.distance)
     }
 }

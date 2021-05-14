@@ -11,7 +11,6 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::{fmt, result};
 
 use ndarray::prelude::*;
 use rand::seq::IteratorRandom;
@@ -26,10 +25,10 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     fn metric(&self) -> Arc<dyn Metric<T, U>>; // should this return the function directly?
 
     /// Returns the number of instances in the dataset.
-    fn ninstances(&self) -> usize;
+    fn cardinality(&self) -> usize;
 
     /// Returns the shape of the dataset.
-    fn shape(&self) -> &[usize];
+    fn shape(&self) -> Vec<usize>;
 
     /// Returns the Indices for the dataset.
     fn indices(&self) -> Indices;
@@ -127,8 +126,8 @@ pub struct RowMajor<T: Number, U: Number> {
     cache: Mutex<HashMap<(Index, Index), U>>,
 }
 
-impl<T: Number, U: Number> fmt::Debug for RowMajor<T, U> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+impl<T: Number, U: Number> std::fmt::Debug for RowMajor<T, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
         f.debug_struct("RowMajor Dataset")
             .field("data-shape", &self.data.shape())
             .field("metric", &self.metric_name)
@@ -173,13 +172,13 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
     }
 
     /// Returns the number of rows in the dataset.
-    fn ninstances(&self) -> usize {
+    fn cardinality(&self) -> usize {
         self.data.nrows()
     }
 
     /// Returns the shape of the dataset.
-    fn shape(&self) -> &[usize] {
-        self.data.shape()
+    fn shape(&self) -> Vec<usize> {
+        self.data.shape().to_vec()
     }
 
     /// Return all of the indices in the dataset.
@@ -222,7 +221,7 @@ mod tests {
         let data: Array2<f64> = array![[1., 2., 3.], [3., 3., 1.]];
         let row_0 = array![1., 2., 3.].into_dyn();
         let dataset = RowMajor::new(data, "euclidean", false).unwrap();
-        assert_eq!(dataset.ninstances(), 2);
+        assert_eq!(dataset.cardinality(), 2);
         assert_eq!(dataset.instance(0), row_0,);
 
         approx_eq!(f64, dataset.distance(0, 0), 0.);

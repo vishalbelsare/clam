@@ -50,10 +50,10 @@ fn cakes_ann_benchmarks(c: &mut Criterion) {
 
         for f in 3..6 {
             let radius = search.diameter() * (10_f32).powi(-f);
-            println!("{}, {:?}, {:.2e}, {:?}", name, train_dataset.shape(), radius, test_dataset.ninstances());
+            println!("{}, {:?}, {:.2e}, {:?}", name, train_dataset.shape(), radius, test_dataset.cardinality());
             group.bench_function(format!("radius_{}", radius), |b| {
                 b.iter(|| {
-                    for q in 0..test_dataset.ninstances() {
+                    for q in 0..test_dataset.cardinality() {
                         search.rnn(&test_dataset.instance(q), Some(radius));
                     }
                 })
@@ -83,7 +83,7 @@ fn cakes_chaoda_datasets(c: &mut Criterion) {
             group.bench_function(format!("{}", i), |b| {
                 b.iter(|| {
                     for q in 0..num_queries {
-                        let q = q % dataset.ninstances();
+                        let q = q % dataset.cardinality();
                         search.rnn(&search.dataset.instance(q), Some(radius));
                     }
                 })
