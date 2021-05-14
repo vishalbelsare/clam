@@ -5,7 +5,7 @@ use crate::prelude::*;
 
 // A `Dataset` that also allows for compression and decompression.
 
-// Instances in a `CompressibleDataset` can be endoced in terms of each other to
+// Instances in a `CompressibleDataset` can be encoded in terms of each other to
 // produce compressed encodings represented as bytes.
 // Those bytes can also be used to decode an encoded instance by using the reference.
 pub trait CompressibleDataset<T: Number, U: Number>: Dataset<T, U> {
@@ -13,25 +13,19 @@ pub trait CompressibleDataset<T: Number, U: Number>: Dataset<T, U> {
     fn as_dataset(&self) -> &dyn Dataset<T, U>;
 
     /// Encode one instance in terms of another.
-    ///
-    /// TODO: Think about whether to do this in terms of indices of instances.
-    fn encode(&self, x: Index, y: Index) -> Result<Vec<u8>, String>;
+    fn encode(&self, x: Index, y: Index) -> Result<Vec<u8>, String> {
+        self.metric().encode(&self.instance(x), &self.instance(y))
+    }
 
     /// Decode an instance from the encoded bytes and the reference.
-    fn decode(&self, x: Index, y: &[u8]) -> Result<Vec<T>, String>;
+    fn decode(&self, x: Index, y: &[u8]) -> Result<Vec<T>, String> {
+        self.metric().decode(&self.instance(x), y)
+    }
 }
 
 impl<T: Number, U: Number> CompressibleDataset<T, U> for RowMajor<T, U> {
     fn as_dataset(&self) -> &dyn Dataset<T, U> {
         self
-    }
-
-    fn encode(&self, x: Index, y: Index) -> Result<Vec<u8>, String> {
-        self.metric().encode(&self.instance(x), &self.instance(y))
-    }
-
-    fn decode(&self, x: Index, y: &[u8]) -> Result<Vec<T>, String> {
-        self.metric().decode(&self.instance(x), y)
     }
 }
 
