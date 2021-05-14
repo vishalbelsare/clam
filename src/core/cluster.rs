@@ -44,10 +44,10 @@ pub struct Cluster<T: Number, U: Number> {
     pub cardinality: usize,
 
     /// The `Indices` (a Vec<usize>) of instances in this `Cluster`.
-    pub indices: Indices,
+    pub indices: Vec<Index>,
 
     /// A subset of `indices' to use for fast, approximate calculations of center and radius.
-    argsamples: Indices,
+    argsamples: Vec<Index>,
 
     /// The `Index` of the center of the Cluster.
     pub argcenter: Index,
@@ -91,7 +91,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
     ///   We never copy `Instances` from the `Dataset`.
     /// * `name`: An Optional String name for this `Cluster`. Defaults to "1" for the root `Cluster`.
     /// * `indices`: The `Indices` of `Instances` from the dataset that are contained in the `Cluster`.
-    pub fn new(dataset: Arc<dyn Dataset<T, U>>, name: u64, indices: Indices) -> Cluster<T, U> {
+    pub fn new(dataset: Arc<dyn Dataset<T, U>>, name: u64, indices: Vec<Index>) -> Cluster<T, U> {
         let mut cluster = Cluster {
             dataset,
             name,
@@ -153,7 +153,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
 
     /// Returns the indices of two maximally separated instances in the Cluster.
     fn poles(&self) -> (Index, Index) {
-        let indices: Indices = self.indices.par_iter().filter(|&&i| i != self.argradius).cloned().collect();
+        let indices: Vec<Index> = self.indices.par_iter().filter(|&&i| i != self.argradius).cloned().collect();
         let distances = self.dataset.distances_from(self.argradius, &indices);
         let (farthest, _) = argmax(&distances);
         (self.argradius, indices[farthest])
@@ -183,7 +183,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
         let (left, right) = self.poles();
 
         // Split cluster indices by proximity to left or right pole
-        let (left, right): (Indices, Indices) = self
+        let (left, right): (Vec<Index>, Vec<Index>) = self
             .indices
             .par_iter()
             .partition(|&&i| self.dataset.distance(left, i) <= self.dataset.distance(i, right));
@@ -232,7 +232,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
     /// Returns unique samples from among Cluster.indices.
     ///
     /// These significantly speed up the computation of center and partition without much loss in accuracy.
-    fn argsamples(&self) -> Indices {
+    fn argsamples(&self) -> Vec<Index> {
         if self.cardinality <= SUB_SAMPLE {
             self.indices.clone()
         } else {

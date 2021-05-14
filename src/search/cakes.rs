@@ -131,12 +131,12 @@ impl<T: Number, U: Number> Cakes<T, U> {
     /// Exhaustively searches the clusters identified by tree-search and
     /// returns a HashMap of all hits and their distance from the query.
     pub fn leaf_search(&self, query: &[T], radius: Option<U>, clusters: ClusterHits<T, U>) -> Hits<U> {
-        let indices = clusters.iter().map(|c| c.indices.clone()).into_iter().flatten().collect::<Indices>();
+        let indices = clusters.iter().map(|c| c.indices.clone()).into_iter().flatten().collect();
         self.linear_search(query, radius, Some(indices))
     }
 
     /// Naive search. Useful for leaf-search and for measuring acceleration from entropy-scaling search.
-    pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: Option<Indices>) -> Hits<U> {
+    pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: Option<Vec<Index>>) -> Hits<U> {
         let radius = radius.unwrap_or_else(U::zero);
         let indices = indices.unwrap_or_else(|| self.dataset.indices());
         indices

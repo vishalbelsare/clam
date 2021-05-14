@@ -75,7 +75,7 @@ pub struct Graph<T: Number, U: Number> {
     pub is_built: bool,
     pub cardinality: Index,
     pub population: Index,
-    pub indices: Indices,
+    pub indices: Vec<Index>,
     pub depth: u8,
     pub min_depth: u8,
     pub edges_dict: EdgesMap<T, U>,
@@ -120,7 +120,7 @@ impl<T: Number, U: Number> Graph<T, U> {
         self.clusters.iter().map(|cluster| cluster.cardinality).sum()
     }
 
-    fn indices(&self) -> Indices {
+    fn indices(&self) -> Vec<Index> {
         self.clusters.par_iter().map(|cluster| cluster.indices.clone()).flatten().collect()
     }
 

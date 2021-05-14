@@ -31,7 +31,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     fn shape(&self) -> Vec<usize>;
 
     /// Returns the Indices for the dataset.
-    fn indices(&self) -> Indices;
+    fn indices(&self) -> Vec<Index>;
 
     /// Returns the instance at the given index.
     ///
@@ -49,7 +49,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     /// * `indices`:
     ///   - Some - Select unique n from given indices.
     ///   - None - Select unique n from all indices.
-    fn choose_unique(&self, indices: Indices, n: usize) -> Indices {
+    fn choose_unique(&self, indices: Vec<Index>, n: usize) -> Vec<Index> {
         // TODO: actually check for uniqueness among choices
         indices.into_iter().choose_multiple(&mut rand::thread_rng(), n)
     }
@@ -182,7 +182,7 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
     }
 
     /// Return all of the indices in the dataset.
-    fn indices(&self) -> Indices {
+    fn indices(&self) -> Vec<Index> {
         (0..self.data.shape()[0]).collect()
     }
 
