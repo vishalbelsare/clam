@@ -103,10 +103,13 @@ impl<T: Number, U: Number> Cluster<T, U> {
             argradius: 0,
             radius: U::zero(),
         };
+        println!("Building Cluster {}", cluster.name);
         cluster.argsamples = cluster.argsamples();
         cluster.argcenter = cluster.argcenter();
+        println!("center index {}", cluster.argcenter);
         cluster.argradius = cluster.argradius();
         cluster.radius = cluster.radius();
+        println!("radius {} and index {}", cluster.radius, cluster.argradius);
         cluster
     }
 
@@ -155,7 +158,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
     fn poles(&self) -> (Index, Index) {
         let indices: Vec<Index> = self.indices.par_iter().filter(|&&i| i != self.argradius).cloned().collect();
         let distances = self.dataset.distances_from(self.argradius, &indices);
-        let (farthest, _) = argmax(&distances);
+        let (farthest, _) = argmax(&distances.to_vec());
         (self.argradius, indices[farthest])
     }
 
@@ -246,8 +249,8 @@ impl<T: Number, U: Number> Cluster<T, U> {
         let distances: Vec<U> = self
             .dataset
             .pairwise_distances(&self.argsamples)
-            .par_iter()
-            .map(|v| v.par_iter().cloned().sum())
+            .outer_iter()
+            .map(|v| v.iter().cloned().sum())
             .collect();
         let (argcenter, _) = argmin(&distances);
         self.argsamples[argcenter]
@@ -257,7 +260,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
     /// farthest away from the `center`.
     fn argradius(&self) -> Index {
         let distances = self.dataset.distances_from(self.argcenter, &self.indices);
-        let (argradius, _) = argmax(&distances);
+        let (argradius, _) = argmax(&distances.to_vec());
         self.indices[argradius]
     }
 

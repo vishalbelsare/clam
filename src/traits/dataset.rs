@@ -68,11 +68,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     ///
     /// * `left` - Index of the instance to compute distances from
     /// * `right` - Indices of the instances to compute distances to
-    ///
-    /// TODO: Return Array1 instead of Vec
-    fn distances_from(&self, left: Index, right: &[Index]) -> Vec<U> {
-        right.par_iter().map(|&r| self.distance(left, r)).collect()
-    }
+    fn distances_from(&self, left: Index, right: &[Index]) -> Array1<U>;
 
     /// Returns distances from the instances with indices in left to the instances
     /// with indices in right.
@@ -81,23 +77,14 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     ///
     /// * `left` - Indices of instances
     /// * `right` - Indices of instances
-    ///
-    /// TODO: Return Array2 instead of Vec<Vec>
-    fn distances_among(&self, left: &[Index], right: &[Index]) -> Vec<Vec<U>> {
-        left.par_iter().map(|&l| self.distances_from(l, right)).collect()
-    }
+    fn distances_among(&self, left: &[Index], right: &[Index]) -> Array2<U>;
 
     /// Returns the pairwise distances between the instances at the given indices.
     ///
     /// # Arguments
     ///
     /// * `indices` - Indices of instances among which to compute pairwise distances.
-    ///
-    /// TODO: Return Array2 instead of Vec<Vec>
-    fn pairwise_distances(&self, indices: &[Index]) -> Vec<Vec<U>> {
-        // TODO: Optimize this to only make distance calls for lower triangular matrix
-        self.distances_among(indices, indices)
-    }
+    fn pairwise_distances(&self, indices: &[Index]) -> Array2<U>;
 }
 
 /// RowMajor represents a dataset stored as a 2-dimensional array
@@ -205,6 +192,20 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
                 *self.cache.lock().unwrap().get(&key).unwrap()
             }
         }
+    }
+
+    fn distances_from(&self, left: Index, right: &[Index]) -> Array1<U> {
+        Array1::from_vec(right.par_iter().map(|&r| self.distance(left, r)).collect())
+    }
+
+    fn distances_among(&self, left: &[Index], right: &[Index]) -> Array2<U> {
+        let distances: Array1<U> = left.iter().map(|&l| self.distances_from(l, right).to_vec()).flatten().collect();
+        distances.into_shape((left.len(), right.len())).unwrap()
+    }
+
+    fn pairwise_distances(&self, indices: &[Index]) -> Array2<U> {
+        // TODO: Optimize this to only make distance calls for lower triangular matrix
+        self.distances_among(indices, indices)
     }
 }
 
