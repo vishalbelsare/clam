@@ -103,13 +103,10 @@ impl<T: Number, U: Number> Cluster<T, U> {
             argradius: 0,
             radius: U::zero(),
         };
-        println!("Building Cluster {}", cluster.name);
         cluster.argsamples = cluster.argsamples();
         cluster.argcenter = cluster.argcenter();
-        println!("center index {}", cluster.argcenter);
         cluster.argradius = cluster.argradius();
         cluster.radius = cluster.radius();
-        println!("radius {} and index {}", cluster.radius, cluster.argradius);
         cluster
     }
 
