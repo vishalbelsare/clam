@@ -73,11 +73,11 @@ pub struct Graph<T: Number, U: Number> {
     pub clusters: ClusterSet<T, U>,
     pub edges: EdgeSet<T, U>,
     pub is_built: bool,
-    pub cardinality: Index,
-    pub population: Index,
+    pub cardinality: usize,
+    pub population: usize,
     pub indices: Vec<Index>,
-    pub depth: u8,
-    pub min_depth: u8,
+    pub depth: usize,
+    pub min_depth: usize,
     pub edges_dict: EdgesMap<T, U>,
 }
 // TODO: Implement Display, perhaps using Dot-String format
@@ -112,11 +112,11 @@ impl<T: Number, U: Number> Graph<T, U> {
         Ok(graph)
     }
 
-    fn cardinality(&self) -> Index {
+    fn cardinality(&self) -> usize {
         self.clusters.len()
     }
 
-    fn population(&self) -> Index {
+    fn population(&self) -> usize {
         self.clusters.iter().map(|cluster| cluster.cardinality).sum()
     }
 
@@ -124,15 +124,15 @@ impl<T: Number, U: Number> Graph<T, U> {
         self.clusters.par_iter().map(|cluster| cluster.indices.clone()).flatten().collect()
     }
 
-    fn depth(&self) -> u8 {
+    fn depth(&self) -> usize {
         self.clusters.par_iter().map(|cluster| cluster.depth()).max().unwrap()
     }
 
-    fn min_depth(&self) -> u8 {
+    fn min_depth(&self) -> usize {
         self.clusters.par_iter().map(|cluster| cluster.depth()).min().unwrap()
     }
 
-    pub fn depth_range(&self) -> (u8, u8) {
+    pub fn depth_range(&self) -> (usize, usize) {
         (self.min_depth, self.depth)
     }
 

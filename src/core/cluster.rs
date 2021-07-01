@@ -6,6 +6,7 @@ use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use bitvec::prelude::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -36,9 +37,7 @@ pub struct Cluster<T: Number, U: Number> {
     /// A Cluster's name is the turn when it would be visited in a breadth-first
     /// traversal of a perfect and balanced binary tree.
     /// The root is named 1 and all descendants follow.
-    ///
-    /// TODO: Switch to using a bit-vector to allow for trees with depth greater than 63.
-    pub name: u64,
+    pub name: BitVec<Lsb0, u8>,
 
     /// The number of instances in this Cluster.
     pub cardinality: usize,
@@ -78,7 +77,8 @@ impl<T: Number, U: Number> Hash for Cluster<T, U> {
 
 impl<T: Number, U: Number> std::fmt::Display for Cluster<T, U> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.name)
+        let name_str: Vec<&str> = self.name.iter().map(|b| if *b { "1" } else { "0" }).collect();
+        write!(f, "{}", name_str.join(""))
     }
 }
 
@@ -91,7 +91,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
     ///   We never copy `Instances` from the `Dataset`.
     /// * `name`: An Optional String name for this `Cluster`. Defaults to "1" for the root `Cluster`.
     /// * `indices`: The `Indices` of `Instances` from the dataset that are contained in the `Cluster`.
-    pub fn new(dataset: Arc<dyn Dataset<T, U>>, name: u64, indices: Vec<Index>) -> Cluster<T, U> {
+    pub fn new(dataset: Arc<dyn Dataset<T, U>>, name: BitVec<Lsb0, u8>, indices: Vec<Index>) -> Cluster<T, U> {
         let mut cluster = Cluster {
             dataset,
             name,
@@ -111,10 +111,8 @@ impl<T: Number, U: Number> Cluster<T, U> {
     }
 
     /// The depth of the `Cluster` in the tree. The root `Cluster` has depth 0.
-    pub fn depth(&self) -> u8 {
-        let size = std::mem::size_of::<usize>() << 3;
-        let zeros = self.name.leading_zeros() as usize;
-        (size - zeros - 1) as u8
+    pub fn depth(&self) -> usize {
+        self.name.len() - 1
     }
 
     /// A reference to the instance which is the (sometimes approximate) geometric median of the `Cluster`.
@@ -190,11 +188,21 @@ impl<T: Number, U: Number> Cluster<T, U> {
 
         // Ensure that left cluster is more populated than right cluster.
         let (left, right) = if right.len() > left.len() { (right, left) } else { (left, right) };
+        let left_name = {
+            let mut name = self.name.clone();
+            name.push(false);
+            name
+        };
+        let right_name = {
+            let mut name = self.name.clone();
+            name.push(true);
+            name
+        };
 
         // Recursively apply partition to child clusters.
         let (left, right) = rayon::join(
-            || Cluster::new(Arc::clone(&self.dataset), self.name << 1, left).partition(criteria),
-            || Cluster::new(Arc::clone(&self.dataset), 1 + (self.name << 1), right).partition(criteria),
+            || Cluster::new(Arc::clone(&self.dataset), left_name, left).partition(criteria),
+            || Cluster::new(Arc::clone(&self.dataset), right_name, right).partition(criteria),
         );
 
         // Return new cluster with the proper subtree
@@ -272,6 +280,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
 mod tests {
     use std::sync::Arc;
 
+    use bitvec::prelude::*;
     use ndarray::prelude::*;
 
     use crate::dataset::RowMajor;
@@ -282,7 +291,7 @@ mod tests {
         let data: Array2<f64> = arr2(&[[0., 0., 0.], [1., 1., 1.], [2., 2., 2.], [3., 3., 3.]]);
         let dataset: Arc<dyn Dataset<f64, f64>> = Arc::new(RowMajor::<f64, f64>::new(data, "euclidean", false).unwrap());
         let criteria = vec![criteria::max_depth(3), criteria::min_cardinality(1)];
-        let cluster = Cluster::new(Arc::clone(&dataset), 1, dataset.indices()).partition(&criteria);
+        let cluster = Cluster::new(Arc::clone(&dataset), bitvec![Lsb0, u8; 1], dataset.indices()).partition(&criteria);
 
         assert_eq!(cluster.depth(), 0);
         assert_eq!(cluster.cardinality, 4);
@@ -307,8 +316,8 @@ mod tests {
         assert_eq!(format!("{:?}", cluster), cluster_str);
 
         let (left, right) = cluster.children.unwrap();
-        assert_eq!(format!("{:}", left), "2");
-        assert_eq!(format!("{:}", right), "3");
+        assert_eq!(format!("{:}", left), "10");
+        assert_eq!(format!("{:}", right), "11");
 
         for child in [left, right].iter() {
             assert_eq!(child.depth(), 1);

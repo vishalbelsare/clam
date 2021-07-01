@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use bitvec::prelude::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;
@@ -51,14 +52,14 @@ impl<T: Number, U: Number> Cakes<T, U> {
     /// * `max_depth` - Clusters in the tree that have a higher depth will not be partitioned.
     ///                 Capped at 63 until I feel like bothering with bit-vectors.
     /// * `min_cardinality` - Clusters in the tree that have a smaller cardinality will not be partitioned.
-    pub fn build(dataset: Arc<dyn Dataset<T, U>>, max_depth: Option<u8>, min_cardinality: Option<usize>) -> Cakes<T, U> {
+    pub fn build(dataset: Arc<dyn Dataset<T, U>>, max_depth: Option<usize>, min_cardinality: Option<usize>) -> Cakes<T, U> {
         // parse the max-depth and min-cardinality and create the partition-criterion.
         let criteria = vec![
             criteria::max_depth(std::cmp::min(max_depth.unwrap_or(63), 63)),
             criteria::min_cardinality(min_cardinality.unwrap_or(1)),
         ];
         // build the search tree.
-        let root = Cluster::new(Arc::clone(&dataset), 1, dataset.indices()).partition(&criteria);
+        let root = Cluster::new(Arc::clone(&dataset), bitvec![Lsb0, u8; 1], dataset.indices()).partition(&criteria);
         // return the struct
         Cakes {
             dataset: Arc::clone(&dataset),
