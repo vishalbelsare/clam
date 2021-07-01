@@ -46,7 +46,7 @@ pub struct Cluster<T: Number, U: Number> {
     pub indices: Vec<Index>,
 
     /// A subset of `indices' to use for fast, approximate calculations of center and radius.
-    argsamples: Vec<Index>,
+    pub argsamples: Vec<Index>,
 
     /// The `Index` of the center of the Cluster.
     pub argcenter: Index,
@@ -219,6 +219,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
         }
     }
 
+    /// Returns a Vec of clusters containing all descendants of the cluster excluding itself.
     pub fn flatten_tree(&self) -> Vec<Arc<Cluster<T, U>>> {
         match self.children.borrow() {
             Some((left, right)) => {

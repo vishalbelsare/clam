@@ -31,7 +31,7 @@ pub struct Cakes<T: Number, U: Number> {
     pub dataset: Arc<dyn Dataset<T, U>>,
 
     /// The root Cluster of the search tree.
-    root: Arc<Cluster<T, U>>,
+    pub root: Arc<Cluster<T, U>>,
 
     /// The distance function being used.
     metric: Arc<dyn Metric<T, U>>,
