@@ -2,7 +2,6 @@
 //!
 //! Define and implement the `Cluster` struct.
 
-use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -221,9 +220,9 @@ impl<T: Number, U: Number> Cluster<T, U> {
 
     /// Returns a Vec of clusters containing all descendants of the cluster excluding itself.
     pub fn flatten_tree(&self) -> Vec<Arc<Cluster<T, U>>> {
-        match self.children.borrow() {
+        match &self.children {
             Some((left, right)) => {
-                let mut descendants = vec![Arc::clone(&left), Arc::clone(&right)];
+                let mut descendants = vec![Arc::clone(left), Arc::clone(right)];
                 descendants.append(&mut left.flatten_tree());
                 descendants.append(&mut right.flatten_tree());
                 descendants
