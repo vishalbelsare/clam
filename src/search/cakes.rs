@@ -34,7 +34,7 @@ pub struct Cakes<T: Number, U: Number> {
     pub root: Arc<Cluster<T, U>>,
 
     /// The distance function being used.
-    metric: Arc<dyn Metric<T, U>>,
+    pub metric: Arc<dyn Metric<T, U>>,
 }
 
 impl<T: Number, U: Number> std::fmt::Debug for Cakes<T, U> {
