@@ -33,15 +33,13 @@ impl<T: Number, U: Number> CompressibleDataset<T, U> for RowMajor<T, U> {
 mod tests {
     use std::sync::Arc;
 
-    use ndarray::prelude::*;
-
     use crate::dataset::RowMajor;
     use crate::CompressibleDataset;
 
     #[test]
     fn test_codec() {
-        let data: Array2<f64> = arr2(&[[0., 0., 0.], [1., 1., 1.], [2., 2., 2.], [3., 3., 3.]]);
-        let dataset: Arc<dyn CompressibleDataset<f64, f64>> = Arc::new(RowMajor::<f64, f64>::new(data, "hamming", false).unwrap());
+        let data = vec![vec![0., 0., 0.], vec![1., 1., 1.], vec![2., 2., 2.], vec![3., 3., 3.]];
+        let dataset: Arc<dyn CompressibleDataset<_, f64>> = Arc::new(RowMajor::new(data, "hamming", false).unwrap());
 
         let encoded = dataset.encode(0, 1).unwrap();
         let decoded = dataset.decode(0, &encoded).unwrap();

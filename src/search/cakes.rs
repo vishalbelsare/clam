@@ -55,7 +55,7 @@ impl<T: Number, U: Number> Cakes<T, U> {
     pub fn build(dataset: Arc<dyn Dataset<T, U>>, max_depth: Option<usize>, min_cardinality: Option<usize>) -> Cakes<T, U> {
         // parse the max-depth and min-cardinality and create the partition-criterion.
         let criteria = vec![
-            criteria::max_depth(std::cmp::min(max_depth.unwrap_or(63), 63)),
+            criteria::max_depth(max_depth.unwrap_or(50)),
             criteria::min_cardinality(min_cardinality.unwrap_or(1)),
         ];
         // build the search tree.
@@ -157,8 +157,6 @@ impl<T: Number, U: Number> Cakes<T, U> {
 mod tests {
     use std::sync::Arc;
 
-    use ndarray::prelude::*;
-
     use crate::dataset::RowMajor;
     use crate::prelude::*;
     use crate::utils::read_test_data;
@@ -167,7 +165,7 @@ mod tests {
 
     #[test]
     fn test_search() {
-        let data: Array2<f64> = arr2(&[[0., 0.], [1., 1.], [2., 2.], [3., 3.]]);
+        let data = vec![vec![0., 0.], vec![1., 1.], vec![2., 2.], vec![3., 3.]];
         let dataset: Arc<dyn Dataset<f64, f64>> = Arc::new(RowMajor::new(data, "euclidean", false).unwrap());
         let search = Cakes::build(Arc::clone(&dataset), None, None);
 
@@ -191,7 +189,7 @@ mod tests {
     #[test]
     fn test_search_large() {
         let (data, _) = read_test_data();
-        let dataset: Arc<dyn Dataset<f64, f64>> = Arc::new(RowMajor::<f64, f64>::new(data, "euclidean", true).unwrap());
+        let dataset: Arc<dyn Dataset<_, f64>> = Arc::new(RowMajor::new(data, "euclidean", true).unwrap());
 
         let search = Cakes::build(Arc::clone(&dataset), Some(50), None);
 

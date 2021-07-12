@@ -53,7 +53,7 @@ pub static ANN_DATASETS: &[(&str, &str)] = &[
 
 // TODO: Add subsampling and normalization
 
-pub fn read_test_data() -> (Array2<f64>, Array1<u8>) {
+pub fn read_test_data() -> (Vec<Vec<f64>>, Vec<u8>) {
     let mut data_dir: PathBuf = env::current_dir().unwrap();
     data_dir.push("data");
 
@@ -61,13 +61,16 @@ pub fn read_test_data() -> (Array2<f64>, Array1<u8>) {
     data_path.push("annthyroid.npy");
     data_dir.push("annthyroid_labels.npy");
 
-    let data = read_npy(data_path).unwrap();
-    let labels = read_npy(data_dir).unwrap();
+    let data: Array2<f64> = read_npy(data_path).unwrap();
+    let data = data.outer_iter().map(|row| row.to_vec()).collect();
 
-    (data, labels)
+    let labels: Array1<u8> = read_npy(data_dir).unwrap();
+
+    (data, labels.to_vec())
 }
 
-pub fn read_chaoda_data(name: &str) -> Result<(Array2<f64>, Array1<u8>), ReadNpyError> {
+#[allow(clippy::type_complexity)]
+pub fn read_chaoda_data(name: &str) -> Result<(Vec<Vec<f64>>, Vec<u8>), ReadNpyError> {
     let mut data_dir: PathBuf = PathBuf::new();
     data_dir.push("/data");
     data_dir.push("abd");
@@ -78,11 +81,15 @@ pub fn read_chaoda_data(name: &str) -> Result<(Array2<f64>, Array1<u8>), ReadNpy
     data_dir.push(format!("{:}_labels.npy", name));
 
     let data: Array2<f64> = read_npy(data_path)?;
+    let data = data.outer_iter().map(|row| row.to_vec()).collect();
+    
     let labels: Array1<u8> = read_npy(data_dir)?;
-    Ok((data, labels))
+    
+    Ok((data, labels.to_vec()))
 }
 
-pub fn read_ann_data<T: Number, U: Number>(name: &str) -> Result<(Array2<T>, Array2<U>), ReadNpyError> {
+#[allow(clippy::type_complexity)]
+pub fn read_ann_data<T: Number, U: Number>(name: &str) -> Result<(Vec<Vec<T>>, Vec<Vec<T>>), ReadNpyError> {
     let mut data_dir: PathBuf = PathBuf::new();
     data_dir.push("/data");
     data_dir.push("abd");
@@ -92,8 +99,12 @@ pub fn read_ann_data<T: Number, U: Number>(name: &str) -> Result<(Array2<T>, Arr
     train_path.push(format!("{:}-train.npy", name));
     data_dir.push(format!("{:}-test.npy", name));
 
-    let train = read_npy(train_path)?;
-    let test = read_npy(data_dir)?;
+    let train: Array2<T> = read_npy(train_path)?;
+    let train = train.outer_iter().map(|row| row.to_vec()).collect();
+    
+    let test: Array2<T> = read_npy(data_dir)?;
+    let test = test.outer_iter().map(|row| row.to_vec()).collect();
+    
     Ok((train, test))
 }
 

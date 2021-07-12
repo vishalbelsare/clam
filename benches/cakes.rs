@@ -15,14 +15,14 @@ fn cakes_apogee(c: &mut Criterion) {
     group.sample_size(30);
 
     let (name, metric) = ("apogee", "euclidean");
-    let (train, test) = read_ann_data(name).unwrap();
+    let (train, test) = read_ann_data::<f32, f32>(name).unwrap();
     let train_dataset: Arc<dyn Dataset<f32, f32>> = Arc::new(RowMajor::new(train, metric, true).unwrap());
     let test_dataset: Arc<dyn Dataset<f32, f32>> = Arc::new(RowMajor::new(test, metric, true).unwrap());
     let search = Cakes::build(Arc::clone(&train_dataset), Some(50), None);
     let num_queries = 1000;
 
-    for &radius in [4000_f32, 2000., 1000.].iter() {
-        println!("{}, {:?}, {:.2e}, {:?}", name, train_dataset.shape(), radius, num_queries);
+    for &radius in [4000., 2000., 1000.].iter() {
+        println!("{}, ({}, {}), {:.2e}, {:?}", name, train_dataset.cardinality(), train_dataset.dimensionality(), radius, num_queries);
         group.bench_function(format!("radius_{}", radius), |b| {
             b.iter(|| {
                 for q in 0..num_queries {
@@ -43,14 +43,14 @@ fn cakes_ann_benchmarks(c: &mut Criterion) {
             continue;
         }
 
-        let (train, test) = read_ann_data(name).unwrap();
+        let (train, test) = read_ann_data::<f32, f32>(name).unwrap();
         let train_dataset: Arc<dyn Dataset<f32, f32>> = Arc::new(RowMajor::<f32, f32>::new(train, metric, true).unwrap());
         let test_dataset: Arc<dyn Dataset<f32, f32>> = Arc::new(RowMajor::<f32, f32>::new(test, metric, true).unwrap());
         let search = Cakes::build(Arc::clone(&train_dataset), Some(50), None);
 
         for f in 3..6 {
             let radius = search.diameter() * (10_f32).powi(-f);
-            println!("{}, {:?}, {:.2e}, {:?}", name, train_dataset.shape(), radius, test_dataset.cardinality());
+            println!("{}, ({}, {}), {:.2e}, {:?}", name, train_dataset.cardinality(), train_dataset.dimensionality(), radius, test_dataset.cardinality());
             group.bench_function(format!("radius_{}", radius), |b| {
                 b.iter(|| {
                     for q in 0..test_dataset.cardinality() {
@@ -79,7 +79,7 @@ fn cakes_chaoda_datasets(c: &mut Criterion) {
 
         for (i, &f) in [0.05, 0.02, 1e-2, 1e-3, 1e-4].iter().enumerate() {
             let radius: f64 = search.diameter() * f;
-            println!("{:?}, {:?}, radius: {:.2e}, num_queries: {:}.", name, dataset.shape(), radius, num_queries);
+            println!("{:?}, ({}, {}), radius: {:.2e}, num_queries: {:}.", name, dataset.cardinality(), dataset.dimensionality(), radius, num_queries);
             group.bench_function(format!("{}", i), |b| {
                 b.iter(|| {
                     for q in 0..num_queries {
@@ -90,6 +90,7 @@ fn cakes_chaoda_datasets(c: &mut Criterion) {
             });
         }
         group.finish();
+        break;
     }
 }
 

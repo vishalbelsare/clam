@@ -118,7 +118,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
     ///
     /// TODO: Change the type of `Instance` to something generic.
     /// Ideally, something implementing an `Instance` trait so that `Dataset` becomes a collection of `Instances`.
-    pub fn center(&self) -> Vec<T> {
+    pub fn center(&self) -> &[T] {
         self.dataset.instance(self.argcenter)
     }
 
@@ -281,14 +281,13 @@ mod tests {
     use std::sync::Arc;
 
     use bitvec::prelude::*;
-    use ndarray::prelude::*;
 
     use crate::dataset::RowMajor;
     use crate::prelude::*;
 
     #[test]
     fn test_cluster() {
-        let data: Array2<f64> = arr2(&[[0., 0., 0.], [1., 1., 1.], [2., 2., 2.], [3., 3., 3.]]);
+        let data = vec![vec![0., 0., 0.], vec![1., 1., 1.], vec![2., 2., 2.], vec![3., 3., 3.]];
         let dataset: Arc<dyn Dataset<f64, f64>> = Arc::new(RowMajor::<f64, f64>::new(data, "euclidean", false).unwrap());
         let criteria = vec![criteria::max_depth(3), criteria::min_cardinality(1)];
         let cluster = Cluster::new(Arc::clone(&dataset), bitvec![Lsb0, u8; 1], dataset.indices()).partition(&criteria);

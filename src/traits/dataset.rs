@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use ndarray::prelude::*;
+use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
 use rayon::prelude::*;
 
@@ -22,13 +23,16 @@ use crate::prelude::*;
 /// All datasets supplied to `CLAM` must implement this trait.
 pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     /// Returns the function used to compute the distance between instances.
-    fn metric(&self) -> Arc<dyn Metric<T, U>>; // should this return the function directly?
+    fn metric(&self) -> Arc<dyn Metric<T, U>>;
+
+    /// Returns the name of the metric in use
+    fn metric_name(&self) -> String;
 
     /// Returns the number of instances in the dataset.
     fn cardinality(&self) -> usize;
 
-    /// Returns the shape of the dataset.
-    fn shape(&self) -> Vec<usize>;
+    /// Returns the dimensionality of the dataset
+    fn dimensionality(&self) -> usize;
 
     /// Returns the Indices for the dataset.
     fn indices(&self) -> Vec<Index>;
@@ -39,19 +43,30 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     ///
     /// * `index` - The index of the instance to return from the dataset.
     ///
-    fn instance(&self, index: Index) -> Vec<T>;
+    fn instance(&self, index: Index) -> &[T];
 
     /// Returns `n` unique instances from the given indices and returns their indices.
     ///
     /// # Arguments
     ///
+    /// * `indices` - Indices from among which to collect sample.
     /// * `n` - The number of unique instances
-    /// * `indices`:
-    ///   - Some - Select unique n from given indices.
-    ///   - None - Select unique n from all indices.
     fn choose_unique(&self, indices: Vec<Index>, n: usize) -> Vec<Index> {
         // TODO: actually check for uniqueness among choices
         indices.into_iter().choose_multiple(&mut rand::thread_rng(), n)
+    }
+
+    /// Randomly sub-samples n unique indices (without replacement) from the dataset.
+    /// Returns a tuple of the sub-sampled indices and the remaining indices.
+    ///
+    /// # Arguments
+    ///
+    /// * `n` - The number of indices to choose.
+    fn subsample_indices(&self, n: usize) -> (Vec<Index>, Vec<Index>) {
+        let mut indices = self.indices();
+        indices.shuffle(&mut rand::thread_rng());
+        let (sample, complement) = indices.split_at(n);
+        (sample.to_vec(), complement.to_vec())
     }
 
     /// Returns the distance between the two instances at the indices provided.
@@ -98,7 +113,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
 /// repeated (potentially expensive) calls to its internal distance function.
 pub struct RowMajor<T: Number, U: Number> {
     /// 2D array of data
-    pub data: Array2<T>,
+    pub data: Vec<Vec<T>>,
 
     // A str name for the distance function being used
     pub metric_name: &'static str,
@@ -116,7 +131,8 @@ pub struct RowMajor<T: Number, U: Number> {
 impl<T: Number, U: Number> std::fmt::Debug for RowMajor<T, U> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
         f.debug_struct("RowMajor Dataset")
-            .field("data-shape", &self.data.shape())
+            .field("data-cardinality", &self.cardinality())
+            .field("data-dimensionality", &self.dimensionality())
             .field("metric", &self.metric_name)
             .field("cache-usage", &self.use_cache)
             .finish()
@@ -131,7 +147,7 @@ impl<T: Number, U: Number> RowMajor<T, U> {
     /// * data - a 2-dimensional array.
     /// * name - of distance-metric to use.
     /// * use_cache - whether to use an internal cache for storing distances.
-    pub fn new(data: Array2<T>, metric: &'static str, use_cache: bool) -> Result<RowMajor<T, U>, String> {
+    pub fn new(data: Vec<Vec<T>>, metric: &'static str, use_cache: bool) -> Result<RowMajor<T, U>, String> {
         Ok(RowMajor {
             data,
             metric_name: metric,
@@ -153,32 +169,37 @@ impl<T: Number, U: Number> RowMajor<T, U> {
 }
 
 impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
-    /// Return the metric name for the dataset.
+    /// Return the Metric used for the dataset.
     fn metric(&self) -> Arc<dyn Metric<T, U>> {
         Arc::clone(&self.metric)
     }
 
-    /// Returns the number of rows in the dataset.
-    fn cardinality(&self) -> usize {
-        self.data.nrows()
+    /// Return the metric name for the dataset.
+    fn metric_name(&self) -> String {
+        self.metric_name.to_string()
     }
 
-    /// Returns the shape of the dataset.
-    fn shape(&self) -> Vec<usize> {
-        self.data.shape().to_vec()
+    /// Returns the number of rows in the dataset.
+    fn cardinality(&self) -> usize {
+        self.data.len()
+    }
+
+    fn dimensionality(&self) -> usize {
+        self.data.par_iter().map(|row| row.len()).max().unwrap()
     }
 
     /// Return all of the indices in the dataset.
     fn indices(&self) -> Vec<Index> {
-        (0..self.data.shape()[0]).collect()
+        (0..self.cardinality()).collect()
     }
 
     /// Return the row at the provided index.
-    fn instance(&self, i: Index) -> Vec<T> {
-        self.data.index_axis(Axis(0), i).to_vec()
+    fn instance(&self, i: Index) -> &[T] {
+        &self.data[i]
     }
 
     /// Compute the distance between `left` and `right`.
+    #[allow(clippy::map_entry)]
     fn distance(&self, left: Index, right: Index) -> U {
         if left == right {
             U::zero()
@@ -212,18 +233,17 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
 #[cfg(test)]
 mod tests {
     use float_cmp::approx_eq;
-    use ndarray::prelude::*;
 
     use super::Dataset;
     use super::RowMajor;
 
     #[test]
     fn test_dataset() {
-        let data: Array2<f64> = array![[1., 2., 3.], [3., 3., 1.]];
-        let row_0 = array![1., 2., 3.].into_dyn();
+        let data = vec![vec![1., 2., 3.], vec![3., 3., 1.]];
+        let row_0 = vec![1., 2., 3.];
         let dataset = RowMajor::new(data, "euclidean", false).unwrap();
         assert_eq!(dataset.cardinality(), 2);
-        assert_eq!(dataset.instance(0), row_0.as_slice().unwrap());
+        assert_eq!(dataset.instance(0), &row_0);
 
         approx_eq!(f64, dataset.distance(0, 0), 0.);
         approx_eq!(f64, dataset.distance(0, 1), 3.);
@@ -233,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_choose_unique() {
-        let data: Array2<f64> = array![[1., 2., 3.], [3., 2., 1.]];
+        let data = vec![vec![1., 2., 3.], vec![3., 3., 1.]];
         let dataset: RowMajor<f64, f64> = RowMajor::new(data, "euclidean", false).unwrap();
         assert_eq!(dataset.choose_unique(vec![0], 1), [0]);
         assert_eq!(dataset.choose_unique(vec![0], 5), [0]);
