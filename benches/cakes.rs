@@ -22,7 +22,14 @@ fn cakes_apogee(c: &mut Criterion) {
     let num_queries = 1000;
 
     for &radius in [4000., 2000., 1000.].iter() {
-        println!("{}, ({}, {}), {:.2e}, {:?}", name, train_dataset.cardinality(), train_dataset.dimensionality(), radius, num_queries);
+        println!(
+            "{}, ({}, {}), {:.2e}, {:?}",
+            name,
+            train_dataset.cardinality(),
+            train_dataset.dimensionality(),
+            radius,
+            num_queries
+        );
         group.bench_function(format!("radius_{}", radius), |b| {
             b.iter(|| {
                 for q in 0..num_queries {
@@ -50,7 +57,14 @@ fn cakes_ann_benchmarks(c: &mut Criterion) {
 
         for f in 3..6 {
             let radius = search.diameter() * (10_f32).powi(-f);
-            println!("{}, ({}, {}), {:.2e}, {:?}", name, train_dataset.cardinality(), train_dataset.dimensionality(), radius, test_dataset.cardinality());
+            println!(
+                "{}, ({}, {}), {:.2e}, {:?}",
+                name,
+                train_dataset.cardinality(),
+                train_dataset.dimensionality(),
+                radius,
+                test_dataset.cardinality()
+            );
             group.bench_function(format!("radius_{}", radius), |b| {
                 b.iter(|| {
                     for q in 0..test_dataset.cardinality() {
@@ -79,7 +93,14 @@ fn cakes_chaoda_datasets(c: &mut Criterion) {
 
         for (i, &f) in [0.05, 0.02, 1e-2, 1e-3, 1e-4].iter().enumerate() {
             let radius: f64 = search.diameter() * f;
-            println!("{:?}, ({}, {}), radius: {:.2e}, num_queries: {:}.", name, dataset.cardinality(), dataset.dimensionality(), radius, num_queries);
+            println!(
+                "{:?}, ({}, {}), radius: {:.2e}, num_queries: {:}.",
+                name,
+                dataset.cardinality(),
+                dataset.dimensionality(),
+                radius,
+                num_queries
+            );
             group.bench_function(format!("{}", i), |b| {
                 b.iter(|| {
                     for q in 0..num_queries {

@@ -118,7 +118,7 @@ impl<T: Number, U: Number> Cluster<T, U> {
     ///
     /// TODO: Change the type of `Instance` to something generic.
     /// Ideally, something implementing an `Instance` trait so that `Dataset` becomes a collection of `Instances`.
-    pub fn center(&self) -> &[T] {
+    pub fn center(&self) -> Vec<T> {
         self.dataset.instance(self.argcenter)
     }
 

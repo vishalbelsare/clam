@@ -82,9 +82,9 @@ pub fn read_chaoda_data(name: &str) -> Result<(Vec<Vec<f64>>, Vec<u8>), ReadNpyE
 
     let data: Array2<f64> = read_npy(data_path)?;
     let data = data.outer_iter().map(|row| row.to_vec()).collect();
-    
+
     let labels: Array1<u8> = read_npy(data_dir)?;
-    
+
     Ok((data, labels.to_vec()))
 }
 
@@ -101,10 +101,10 @@ pub fn read_ann_data<T: Number, U: Number>(name: &str) -> Result<(Vec<Vec<T>>, V
 
     let train: Array2<T> = read_npy(train_path)?;
     let train = train.outer_iter().map(|row| row.to_vec()).collect();
-    
+
     let test: Array2<T> = read_npy(data_dir)?;
     let test = test.outer_iter().map(|row| row.to_vec()).collect();
-    
+
     Ok((train, test))
 }
 

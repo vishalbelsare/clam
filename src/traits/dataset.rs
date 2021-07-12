@@ -43,7 +43,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
     ///
     /// * `index` - The index of the instance to return from the dataset.
     ///
-    fn instance(&self, index: Index) -> &[T];
+    fn instance(&self, index: Index) -> Vec<T>;
 
     /// Returns `n` unique instances from the given indices and returns their indices.
     ///
@@ -67,6 +67,23 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
         indices.shuffle(&mut rand::thread_rng());
         let (sample, complement) = indices.split_at(n);
         (sample.to_vec(), complement.to_vec())
+    }
+
+    /// Collects the instances corresponding to the given indices and returns them as a RowMajor dataset.
+    ///
+    /// # Arguments
+    ///
+    /// * `indices` - The indices from which to build the subset
+    fn row_major_subset(&self, indices: &[Index]) -> Arc<RowMajor<T, U>> {
+        let instances = indices.par_iter().map(|&i| self.instance(i)).collect();
+        let subset = RowMajor {
+            data: instances,
+            metric_name: self.metric_name(),
+            use_cache: true,
+            metric: self.metric(),
+            cache: Mutex::new(HashMap::new()),
+        };
+        Arc::new(subset)
     }
 
     /// Returns the distance between the two instances at the indices provided.
@@ -116,7 +133,7 @@ pub struct RowMajor<T: Number, U: Number> {
     pub data: Vec<Vec<T>>,
 
     // A str name for the distance function being used
-    pub metric_name: &'static str,
+    pub metric_name: String,
 
     /// Whether this dataset should use an internal cache (recommended)
     pub use_cache: bool,
@@ -147,10 +164,10 @@ impl<T: Number, U: Number> RowMajor<T, U> {
     /// * data - a 2-dimensional array.
     /// * name - of distance-metric to use.
     /// * use_cache - whether to use an internal cache for storing distances.
-    pub fn new(data: Vec<Vec<T>>, metric: &'static str, use_cache: bool) -> Result<RowMajor<T, U>, String> {
+    pub fn new(data: Vec<Vec<T>>, metric: &str, use_cache: bool) -> Result<RowMajor<T, U>, String> {
         Ok(RowMajor {
             data,
-            metric_name: metric,
+            metric_name: metric.to_string(),
             use_cache,
             metric: metric_new(metric)?,
             cache: Mutex::new(HashMap::new()),
@@ -194,8 +211,8 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
     }
 
     /// Return the row at the provided index.
-    fn instance(&self, i: Index) -> &[T] {
-        &self.data[i]
+    fn instance(&self, i: Index) -> Vec<T> {
+        self.data[i].clone()
     }
 
     /// Compute the distance between `left` and `right`.
@@ -243,7 +260,7 @@ mod tests {
         let row_0 = vec![1., 2., 3.];
         let dataset = RowMajor::new(data, "euclidean", false).unwrap();
         assert_eq!(dataset.cardinality(), 2);
-        assert_eq!(dataset.instance(0), &row_0);
+        assert_eq!(dataset.instance(0), row_0);
 
         approx_eq!(f64, dataset.distance(0, 0), 0.);
         approx_eq!(f64, dataset.distance(0, 1), 3.);

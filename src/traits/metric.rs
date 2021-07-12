@@ -55,7 +55,7 @@ pub trait Metric<T, U>: Send + Sync {
 ///   - "levenshtein": Edit-distance among strings (e.g. genomic/amino-acid sequences).
 ///   - "wasserstein": Earth-Mover-Distance among high-dimensional probability distributions (will be usable with images)
 ///   - "tanamoto": Jaccard distance between the Maximal-Common-Subgraph of two molecular structures.
-pub fn metric_new<T: Number, U: Number>(metric: &'static str) -> Result<Arc<dyn Metric<T, U>>, String> {
+pub fn metric_new<T: Number, U: Number>(metric: &str) -> Result<Arc<dyn Metric<T, U>>, String> {
     match metric {
         "euclidean" => Ok(Arc::new(Euclidean)),
         "euclideansq" => Ok(Arc::new(EuclideanSq)),
