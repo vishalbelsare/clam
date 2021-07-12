@@ -90,7 +90,6 @@ fn cakes_chaoda_datasets(c: &mut Criterion) {
             });
         }
         group.finish();
-        break;
     }
 }
 
