@@ -2,6 +2,7 @@
 //!
 //! Define and implement the `Cluster` struct.
 
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::sync::Arc;
@@ -19,6 +20,7 @@ const SUB_SAMPLE: usize = 100;
 /// A 2-tuple of `Arc<Cluster>` representing the two child `Clusters`
 /// formed when a `Cluster` is partitioned.
 type Children<T, U> = (Arc<Cluster<T, U>>, Arc<Cluster<T, U>>);
+pub type ClusterName = BitVec<Lsb0, u8>;
 
 // type ClusterMap<T, U> = HashMap<usize, Arc<Cluster<T, U>>>;
 
@@ -38,7 +40,7 @@ pub struct Cluster<T: Number, U: Number> {
     /// A Cluster's name is the turn when it would be visited in a breadth-first
     /// traversal of a perfect and balanced binary tree.
     /// The root is named 1 and all descendants follow.
-    pub name: BitVec<Lsb0, u8>,
+    pub name: ClusterName,
 
     /// The number of instances in this Cluster.
     pub cardinality: usize,
@@ -130,8 +132,30 @@ impl<T: Number, U: Number> Cluster<T, U> {
     }
 
     /// Returns the distance from the center of the Cluster to the given instance.
-    pub fn distance_to(&self, other: &Arc<Cluster<T, U>>) -> U {
+    pub fn distance_to_other(&self, other: &Arc<Cluster<T, U>>) -> U {
         self.dataset.distance(self.argcenter, other.argcenter)
+    }
+
+    pub fn distance_to_instance(&self, instance: &[T]) -> U {
+        self.dataset.metric().distance(&self.center(), instance)
+    }
+
+    pub fn add_instance(&self, sequence: &[T], distance: U) -> HashMap<ClusterName, U> {
+        let mut result = match &self.children {
+            Some((left, right)) => {
+                let left_distance = left.distance_to_instance(sequence);
+                let right_distance = right.distance_to_instance(sequence);
+
+                if left_distance <= right_distance {
+                    left.add_instance(sequence, left_distance)
+                } else {
+                    right.add_instance(sequence, right_distance)
+                }
+            }
+            None => HashMap::new(),
+        };
+        result.insert(self.name.clone(), distance);
+        result
     }
 
     pub fn descend_towards(&self, _name: u64) -> Result<Arc<Cluster<T, U>>, String> {

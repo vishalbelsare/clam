@@ -42,7 +42,7 @@ impl<T: Number, U: Number> std::fmt::Debug for Cakes<T, U> {
     }
 }
 
-impl<T: Number, U: Number> Cakes<T, U> {
+impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
     /// Builds a search tree for the given dataset.
     ///
     /// # Arguments
@@ -64,6 +64,124 @@ impl<T: Number, U: Number> Cakes<T, U> {
             dataset: Arc::clone(&dataset),
             root: Arc::new(root),
             metric: dataset.metric(),
+        }
+    }
+
+    /// Builds the tree in batches using the memory-fraction provided.
+    ///
+    /// # Arguments
+    ///
+    /// * `dataset` - An Arc to any struct that implements the `Dataset` trait.
+    /// * `batch_fraction` - The fraction of memory to dedicate to a batch.
+    ///                      Defaults to 0.5
+    /// * `max_depth` - Clusters in the tree that have a higher depth will not be partitioned.
+    ///                 Capped at 63 until I feel like bothering with bit-vectors.
+    /// * `min_cardinality` - Clusters in the tree that have a smaller cardinality will not be partitioned.
+    pub fn build_in_batches(dataset: Arc<dyn Dataset<T, U>>, batch_fraction: Option<f32>, max_depth: Option<usize>, min_cardinality: Option<usize>) -> Self {
+        let batch_size = dataset.batch_size(batch_fraction);
+
+        let (sample_indices, complement_indices) = dataset.subsample_indices(batch_size);
+        let subset = dataset.row_major_subset(&sample_indices);
+        let cakes = Cakes::build(subset, max_depth, min_cardinality);
+
+        let flat_tree = {
+            let mut tree = cakes.root.flatten_tree();
+            tree.push(Arc::clone(&cakes.root));
+            tree
+        };
+
+        // Build a sparse matrix of cluster insertions.
+        // | Sequence | Cluster 0                   | Cluster 1  |
+        // | seq_00   | None (Not added to cluster) | Some(dist) |
+        // | seq_01   | Some(dist)                  | None       |
+        let insertion_paths: Vec<Vec<Option<U>>> = complement_indices
+            .par_iter()
+            .map(|&index| {
+                let instance = dataset.instance(index);
+                let distance = cakes.root.dataset.metric().distance(&cakes.root.center(), &instance);
+                let insertion_path = cakes.root.add_instance(&instance, distance);
+
+                flat_tree
+                    .par_iter()
+                    .map(|cluster| {
+                        if insertion_path.contains_key(&cluster.name) {
+                            Some(*insertion_path.get(&cluster.name).unwrap())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+
+        // Reduce the matrix to find the maximum
+        let new_radii: Vec<_> = flat_tree
+            .par_iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let temp: Vec<_> = insertion_paths.par_iter().map(|inner| inner[i].unwrap_or(U::zero())).collect();
+                crate::utils::argmax(&temp)
+            })
+            .collect();
+
+        let insertions: Vec<Vec<usize>> = flat_tree
+            .par_iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let temp: Vec<Option<usize>> = insertion_paths
+                    .par_iter()
+                    .enumerate()
+                    .map(|(j, inner)| {
+                        let distance = inner[i];
+                        if distance.is_some() {
+                            Some(j)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                temp.into_par_iter().filter(|&v| v.is_some()).map(|v| v.unwrap()).collect()
+            })
+            .collect();
+
+        let unstacked_tree: Vec<_> = flat_tree
+            .into_par_iter()
+            .zip(new_radii.into_par_iter())
+            .zip(insertions.into_par_iter())
+            .map(|((cluster, (argradius, radius)), indices)| {
+                let indices = {
+                    let mut indices: Vec<_> = indices.into_iter().map(|i| complement_indices[i]).collect();
+                    indices.extend(cluster.indices.iter().map(|&i| sample_indices[i]));
+                    indices
+                };
+
+                let argsamples: Vec<_> = cluster.argsamples.iter().map(|&i| sample_indices[i]).collect();
+                let argcenter = sample_indices[cluster.argcenter];
+
+                let (argradius, radius) = if radius > cluster.radius {
+                    (complement_indices[argradius], radius)
+                } else {
+                    (sample_indices[cluster.argradius], cluster.radius)
+                };
+
+                Arc::new(Cluster {
+                    dataset: Arc::clone(&dataset),
+                    name: cluster.name.clone(),
+                    cardinality: indices.len(),
+                    indices,
+                    argsamples,
+                    argcenter,
+                    argradius,
+                    radius,
+                    children: None,
+                })
+            })
+            .collect();
+
+        Cakes {
+            dataset,
+            root: restack_tree(unstacked_tree),
+            metric: cakes.metric,
         }
     }
 
@@ -150,6 +268,71 @@ impl<T: Number, U: Number> Cakes<T, U> {
     fn query_distance(&self, query: &[T], index: Index) -> U {
         self.metric.distance(query, &self.dataset.instance(index))
     }
+}
+
+fn child_names<T: Number, U: Number>(cluster: &Arc<Cluster<T, U>>) -> (ClusterName, ClusterName) {
+    let mut left_name = cluster.name.clone();
+    left_name.push(false);
+
+    let mut right_name = cluster.name.clone();
+    right_name.push(true);
+
+    (left_name, right_name)
+}
+
+/// Given an unstacked tree as a HashMap of Clusters, rebuild all
+/// parent-child relationships and return the root cluster.
+/// This consumed the given HashMap.
+pub fn restack_tree<T: Number, U: Number>(tree: Vec<Arc<Cluster<T, U>>>) -> Arc<Cluster<T, U>> {
+    let depth = tree.par_iter().map(|c| c.depth()).max().unwrap();
+    let mut tree: HashMap<_, _> = tree.into_par_iter().map(|c| (c.name.clone(), c)).collect();
+
+    for d in (0..depth).rev() {
+        let (leaves, mut ancestors): (HashMap<_, _>, HashMap<_, _>) = tree.drain().partition(|(_, v)| v.depth() == d + 1);
+        let (parents, mut ancestors): (HashMap<_, _>, HashMap<_, _>) = ancestors.drain().partition(|(_, v)| v.depth() == d);
+
+        let parents: HashMap<_, _> = parents
+            .par_iter()
+            .map(|(_, cluster)| {
+                let (left_name, right_name) = child_names(cluster);
+
+                let (children, indices) = if leaves.contains_key(&left_name) {
+                    let left = Arc::clone(leaves.get(&left_name).unwrap());
+                    let right = Arc::clone(leaves.get(&right_name).unwrap());
+
+                    let mut indices = left.indices.clone();
+                    indices.append(&mut right.indices.clone());
+
+                    (Some((left, right)), indices)
+                } else {
+                    (None, cluster.indices.clone())
+                };
+
+                let cluster = Arc::new(Cluster {
+                    dataset: Arc::clone(&cluster.dataset),
+                    name: cluster.name.clone(),
+                    cardinality: indices.len(),
+                    indices,
+                    children,
+                    argsamples: cluster.argsamples.clone(),
+                    argcenter: cluster.argcenter,
+                    argradius: cluster.argradius,
+                    radius: cluster.radius,
+                });
+
+                (cluster.name.clone(), cluster)
+            })
+            .collect();
+
+        parents.into_iter().for_each(|(name, cluster)| {
+            ancestors.insert(name, cluster);
+        });
+
+        tree = ancestors;
+    }
+
+    assert_eq!(1, tree.len());
+    Arc::clone(tree.get(&bitvec![Lsb0, u8; 1]).unwrap())
 }
 
 #[cfg(test)]

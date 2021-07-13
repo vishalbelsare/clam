@@ -11,17 +11,19 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 use ndarray::prelude::*;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
 use rayon::prelude::*;
+use sysinfo::System;
+use sysinfo::SystemExt;
 
 use crate::metric::metric_new;
 use crate::prelude::*;
 
-type Cache<U> = Arc<Mutex<HashMap<(Index, Index), U>>>;
+type Cache<U> = Arc<RwLock<HashMap<(Index, Index), U>>>;
 
 /// All datasets supplied to `CLAM` must implement this trait.
 pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
@@ -72,6 +74,35 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
         (sample.to_vec(), complement.to_vec())
     }
 
+    /// Returns the size of the memory footprint of an instance in Bytes.
+    fn instance_size(&self) -> usize {
+        self.dimensionality() * (U::num_bytes() as usize)
+    }
+
+    /// Returns the batch-size to use depending on available RAM.
+    ///
+    /// # Arguments
+    ///
+    /// * `memory_fraction` - The fraction (between 0 and 1) of RAM to use for each batch.
+    ///                       Defaults to 0.5
+    fn batch_size(&self, memory_fraction: Option<f32>) -> usize {
+        let batch_fraction = match memory_fraction {
+            Some(f) => {
+                if 0.0 < f && f < 0.9 {
+                    f
+                } else {
+                    0.5
+                }
+            }
+            None => 0.5,
+        };
+
+        let system = System::new_all();
+        let available_memory = system.available_memory() as usize;
+        let batch_size = (available_memory as f32) * batch_fraction * 1024.;
+        (batch_size as usize) / self.instance_size()
+    }
+
     /// Collects the instances corresponding to the given indices and returns them as a RowMajor dataset.
     ///
     /// # Arguments
@@ -84,7 +115,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
             metric_name: self.metric_name(),
             use_cache: true,
             metric: self.metric(),
-            cache: Arc::new(Mutex::new(HashMap::new())),
+            cache: Arc::new(RwLock::new(HashMap::new())),
         };
         Arc::new(subset)
     }
@@ -173,18 +204,18 @@ impl<T: Number, U: Number> RowMajor<T, U> {
             metric_name: metric.to_string(),
             use_cache,
             metric: metric_new(metric)?,
-            cache: Arc::new(Mutex::new(HashMap::new())),
+            cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
     /// Clears the internal cache.
     pub fn clear_cache(&self) {
-        self.cache.lock().unwrap().clear()
+        self.cache.write().unwrap().clear()
     }
 
     /// Returns the number of elements in the internal cache.
     pub fn cache_size(&self) -> Option<usize> {
-        Some(self.cache.lock().unwrap().len())
+        Some(self.cache.read().unwrap().len())
     }
 }
 
@@ -225,12 +256,12 @@ impl<T: Number, U: Number> Dataset<T, U> for RowMajor<T, U> {
             U::zero()
         } else {
             let key = if left < right { (left, right) } else { (right, left) };
-            if !self.cache.lock().unwrap().contains_key(&key) {
+            if !self.cache.read().unwrap().contains_key(&key) {
                 let distance = self.metric.distance(&self.instance(left), &self.instance(right));
-                self.cache.lock().unwrap().insert(key, distance);
+                self.cache.write().unwrap().insert(key, distance);
                 distance
             } else {
-                *self.cache.lock().unwrap().get(&key).unwrap()
+                *self.cache.read().unwrap().get(&key).unwrap()
             }
         }
     }
