@@ -2,14 +2,16 @@
 //!
 //! Define and implement the `Cluster` struct.
 
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::sync::Arc;
 
 use bitvec::prelude::*;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::utils::{argmax, argmin};
+use crate::utils::argmax;
+use crate::utils::argmin;
 use criteria::PartitionCriterion;
 
 const SUB_SAMPLE: usize = 100;

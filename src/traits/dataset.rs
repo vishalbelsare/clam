@@ -10,7 +10,8 @@
 //! * Molecular graphs with Tanamoto distance.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use ndarray::prelude::*;
 use rand::prelude::SliceRandom;
@@ -19,6 +20,8 @@ use rayon::prelude::*;
 
 use crate::metric::metric_new;
 use crate::prelude::*;
+
+type Cache<U> = Arc<Mutex<HashMap<(Index, Index), U>>>;
 
 /// All datasets supplied to `CLAM` must implement this trait.
 pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
@@ -81,7 +84,7 @@ pub trait Dataset<T: Number, U: Number>: std::fmt::Debug + Send + Sync {
             metric_name: self.metric_name(),
             use_cache: true,
             metric: self.metric(),
-            cache: Mutex::new(HashMap::new()),
+            cache: Arc::new(Mutex::new(HashMap::new())),
         };
         Arc::new(subset)
     }
@@ -142,7 +145,7 @@ pub struct RowMajor<T: Number, U: Number> {
     pub metric: Arc<dyn Metric<T, U>>,
 
     // The internal cache.
-    cache: Mutex<HashMap<(Index, Index), U>>,
+    cache: Cache<U>,
 }
 
 impl<T: Number, U: Number> std::fmt::Debug for RowMajor<T, U> {
@@ -170,7 +173,7 @@ impl<T: Number, U: Number> RowMajor<T, U> {
             metric_name: metric.to_string(),
             use_cache,
             metric: metric_new(metric)?,
-            cache: Mutex::new(HashMap::new()),
+            cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 

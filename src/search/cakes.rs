@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -96,11 +95,11 @@ impl<T: Number, U: Number> Cakes<T, U> {
     fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &[T], radius: U) -> ClusterHits<T, U> {
         // Invariant: Entering this function means that the current cluster has overlapping volume with the query-ball.
         // Invariant: Triangle-inequality guarantees exactness of results from each recursive call.
-        match cluster.children.borrow() {
+        match &cluster.children {
             // There are children. Make recursive calls if necessary.
             Some((left, right)) => {
                 // get the two vectors of hits from up to two recursive calls.
-                let (mut l, mut r) = rayon::join(
+                let (mut left, mut right) = rayon::join(
                     || {
                         // If the child has overlap with the query-ball, recurse into the child
                         if self.query_distance(query, left.argcenter) <= (radius + left.radius) {
@@ -119,8 +118,8 @@ impl<T: Number, U: Number> Cakes<T, U> {
                     },
                 );
                 // combine both Vectors into one.
-                l.append(&mut r);
-                l
+                left.append(&mut right);
+                left
             }
             None => {
                 // There are no children so return a Vec containing only the current cluster.
