@@ -108,7 +108,14 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
             }).collect()
         };
 
-        let num_batches = complement_indices.len() / batch_size;
+        let num_batches = {
+            let mut num_batches = complement_indices.len() / batch_size;
+            if complement_indices.len() % batch_size != 0 {
+                num_batches += 1;
+            }
+            num_batches
+        };
+
         for (i, batch_indices) in complement_indices.chunks(batch_size).enumerate() {
             println!("Inserting batch {} of {} with {} instances", i + 1, num_batches, batch_indices.len());
             let batch_dataset = dataset.row_major_subset(batch_indices);
@@ -173,7 +180,8 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                 .zip(new_radii.into_par_iter())
                 .zip(insertions.into_par_iter())
                 .map(|((cluster, (argradius, radius)), indices)| {
-                    let indices: Vec<_> = indices.into_iter().map(|i| batch_indices[i]).collect();
+                    let mut indices: Vec<_> = indices.into_iter().map(|i| batch_indices[i]).collect();
+                    indices.extend(cluster.indices.iter());
 
                     let (argradius, radius) = if radius > cluster.radius {
                         (batch_indices[argradius], radius)
