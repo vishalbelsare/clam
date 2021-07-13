@@ -1,8 +1,8 @@
-use std::env;
 use std::path::PathBuf;
 
 use ndarray::prelude::*;
-use ndarray_npy::{read_npy, ReadNpyError};
+use ndarray_npy::read_npy;
+use ndarray_npy::ReadNpyError;
 
 use crate::prelude::*;
 
@@ -54,7 +54,7 @@ pub static ANN_DATASETS: &[(&str, &str)] = &[
 // TODO: Add subsampling and normalization
 
 pub fn read_test_data() -> (Vec<Vec<f64>>, Vec<u8>) {
-    let mut data_dir: PathBuf = env::current_dir().unwrap();
+    let mut data_dir: PathBuf = std::env::current_dir().unwrap();
     data_dir.push("data");
 
     let mut data_path = data_dir.clone();

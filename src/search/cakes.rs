@@ -79,91 +79,21 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
     /// * `min_cardinality` - Clusters in the tree that have a smaller cardinality will not be partitioned.
     pub fn build_in_batches(dataset: Arc<dyn Dataset<T, U>>, batch_fraction: Option<f32>, max_depth: Option<usize>, min_cardinality: Option<usize>) -> Self {
         let batch_size = dataset.batch_size(batch_fraction);
-
         let (sample_indices, complement_indices) = dataset.subsample_indices(batch_size);
-        let subset = dataset.row_major_subset(&sample_indices);
-        let cakes = Cakes::build(subset, max_depth, min_cardinality);
 
-        let flat_tree = {
+        let subset = dataset.row_major_subset(&sample_indices);
+        let mut cakes = Cakes::build(subset, max_depth, min_cardinality);
+
+        let mut flat_tree: Vec<_> = {
             let mut tree = cakes.root.flatten_tree();
             tree.push(Arc::clone(&cakes.root));
-            tree
-        };
-
-        // Build a sparse matrix of cluster insertions.
-        // | Sequence | Cluster 0                   | Cluster 1  |
-        // | seq_00   | None (Not added to cluster) | Some(dist) |
-        // | seq_01   | Some(dist)                  | None       |
-        let insertion_paths: Vec<Vec<Option<U>>> = complement_indices
-            .par_iter()
-            .map(|&index| {
-                let instance = dataset.instance(index);
-                let distance = cakes.root.dataset.metric().distance(&cakes.root.center(), &instance);
-                let insertion_path = cakes.root.add_instance(&instance, distance);
-
-                flat_tree
-                    .par_iter()
-                    .map(|cluster| {
-                        if insertion_path.contains_key(&cluster.name) {
-                            Some(*insertion_path.get(&cluster.name).unwrap())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            })
-            .collect();
-
-        // Reduce the matrix to find the maximum
-        let new_radii: Vec<_> = flat_tree
-            .par_iter()
-            .enumerate()
-            .map(|(i, _)| {
-                let temp: Vec<_> = insertion_paths.par_iter().map(|inner| inner[i].unwrap_or(U::zero())).collect();
-                crate::utils::argmax(&temp)
-            })
-            .collect();
-
-        let insertions: Vec<Vec<usize>> = flat_tree
-            .par_iter()
-            .enumerate()
-            .map(|(i, _)| {
-                let temp: Vec<Option<usize>> = insertion_paths
-                    .par_iter()
-                    .enumerate()
-                    .map(|(j, inner)| {
-                        let distance = inner[i];
-                        if distance.is_some() {
-                            Some(j)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                temp.into_par_iter().filter(|&v| v.is_some()).map(|v| v.unwrap()).collect()
-            })
-            .collect();
-
-        let unstacked_tree: Vec<_> = flat_tree
-            .into_par_iter()
-            .zip(new_radii.into_par_iter())
-            .zip(insertions.into_par_iter())
-            .map(|((cluster, (argradius, radius)), indices)| {
-                let indices = {
-                    let mut indices: Vec<_> = indices.into_iter().map(|i| complement_indices[i]).collect();
-                    indices.extend(cluster.indices.iter().map(|&i| sample_indices[i]));
-                    indices
-                };
-
-                let argsamples: Vec<_> = cluster.argsamples.iter().map(|&i| sample_indices[i]).collect();
+            tree.into_par_iter().map(|cluster| {
+                let indices: Vec<_> = cluster.indices.par_iter().map(|&i| sample_indices[i]).collect();
+                let argsamples: Vec<_> = cluster.argsamples.par_iter().map(|&i| sample_indices[i]).collect();
                 let argcenter = sample_indices[cluster.argcenter];
-
-                let (argradius, radius) = if radius > cluster.radius {
-                    (complement_indices[argradius], radius)
-                } else {
-                    (sample_indices[cluster.argradius], cluster.radius)
-                };
-
+                let argradius = sample_indices[cluster.argcenter];
+    
+    
                 Arc::new(Cluster {
                     dataset: Arc::clone(&dataset),
                     name: cluster.name.clone(),
@@ -172,17 +102,110 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                     argsamples,
                     argcenter,
                     argradius,
-                    radius,
+                    radius: cluster.radius,
                     children: None,
                 })
-            })
-            .collect();
+            }).collect()
+        };
 
-        Cakes {
-            dataset,
-            root: restack_tree(unstacked_tree),
-            metric: cakes.metric,
+        let num_batches = complement_indices.len() / batch_size;
+        for (i, batch_indices) in complement_indices.chunks(batch_size).enumerate() {
+            println!("Inserting batch {} of {} with {} instances", i + 1, num_batches, batch_indices.len());
+            let batch_dataset = dataset.row_major_subset(batch_indices);
+
+            // Build a sparse matrix of cluster insertions.
+            // | Sequence | Cluster 0                   | Cluster 1  |
+            // | seq_00   | None (Not added to cluster) | Some(dist) |
+            // | seq_01   | Some(dist)                  | None       |
+            let insertion_paths: Vec<Vec<_>> = batch_indices
+                .par_iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    let instance = batch_dataset.instance(i);
+                    let distance = cakes.root.dataset.metric().distance(&cakes.root.center(), &instance);
+                    let insertion_path = cakes.root.add_instance(&instance, distance);
+
+                    flat_tree
+                        .par_iter()
+                        .map(|cluster| {
+                            if insertion_path.contains_key(&cluster.name) {
+                                Some(*insertion_path.get(&cluster.name).unwrap())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+
+            // Reduce the matrix to find the maximum
+            let new_radii: Vec<_> = flat_tree
+                .par_iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    let temp: Vec<_> = insertion_paths.par_iter().map(|inner| inner[i].unwrap_or_else(U::zero)).collect();
+                    crate::utils::argmax(&temp)
+                })
+                .collect();
+
+            let insertions: Vec<Vec<usize>> = flat_tree
+                .par_iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    let temp: Vec<Option<usize>> = insertion_paths
+                        .par_iter()
+                        .enumerate()
+                        .map(|(j, inner)| {
+                            let distance = inner[i];
+                            if distance.is_some() {
+                                Some(j)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    temp.into_par_iter().filter(|&v| v.is_some()).map(|v| v.unwrap()).collect()
+                })
+                .collect();
+
+            let unstacked_tree: Vec<_> = flat_tree
+                .par_iter()
+                .zip(new_radii.into_par_iter())
+                .zip(insertions.into_par_iter())
+                .map(|((cluster, (argradius, radius)), indices)| {
+                    let indices: Vec<_> = indices.into_iter().map(|i| batch_indices[i]).collect();
+
+                    let (argradius, radius) = if radius > cluster.radius {
+                        (batch_indices[argradius], radius)
+                    } else {
+                        (cluster.argradius, cluster.radius)
+                    };
+
+                    Arc::new(Cluster {
+                        dataset: Arc::clone(&dataset),
+                        name: cluster.name.clone(),
+                        cardinality: indices.len(),
+                        indices,
+                        argsamples: cluster.argsamples.clone(),
+                        argcenter: cluster.argcenter,
+                        argradius,
+                        radius,
+                        children: None,
+                    })
+                })
+                .collect();
+
+            cakes = Cakes {
+                dataset: Arc::clone(&dataset),
+                root: restack_tree(unstacked_tree),
+                metric: cakes.metric,
+            };
+
+            flat_tree = cakes.root.flatten_tree();
+            flat_tree.push(Arc::clone(&cakes.root));
         }
+
+        cakes
     }
 
     /// Returns the diameter of the search tree, a useful property for judging appropriate search radii.
