@@ -87,25 +87,26 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
         let mut flat_tree: Vec<_> = {
             let mut tree = cakes.root.flatten_tree();
             tree.push(Arc::clone(&cakes.root));
-            tree.into_par_iter().map(|cluster| {
-                let indices: Vec<_> = cluster.indices.par_iter().map(|&i| sample_indices[i]).collect();
-                let argsamples: Vec<_> = cluster.argsamples.par_iter().map(|&i| sample_indices[i]).collect();
-                let argcenter = sample_indices[cluster.argcenter];
-                let argradius = sample_indices[cluster.argcenter];
-    
-    
-                Arc::new(Cluster {
-                    dataset: Arc::clone(&dataset),
-                    name: cluster.name.clone(),
-                    cardinality: indices.len(),
-                    indices,
-                    argsamples,
-                    argcenter,
-                    argradius,
-                    radius: cluster.radius,
-                    children: None,
+            tree.into_par_iter()
+                .map(|cluster| {
+                    let indices: Vec<_> = cluster.indices.par_iter().map(|&i| sample_indices[i]).collect();
+                    let argsamples: Vec<_> = cluster.argsamples.par_iter().map(|&i| sample_indices[i]).collect();
+                    let argcenter = sample_indices[cluster.argcenter];
+                    let argradius = sample_indices[cluster.argcenter];
+
+                    Arc::new(Cluster {
+                        dataset: Arc::clone(&dataset),
+                        name: cluster.name.clone(),
+                        cardinality: indices.len(),
+                        indices,
+                        argsamples,
+                        argcenter,
+                        argradius,
+                        radius: cluster.radius,
+                        children: None,
+                    })
                 })
-            }).collect()
+                .collect()
         };
 
         let num_batches = {
