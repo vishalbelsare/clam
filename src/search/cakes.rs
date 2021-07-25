@@ -7,10 +7,10 @@ use rayon::prelude::*;
 use crate::prelude::*;
 
 /// A Vec of Clusters that overlap with the query ball.
-pub type ClusterHits<T, U> = Vec<Arc<Cluster<T, U>>>;
+type ClusterHits<T, U> = Vec<Arc<Cluster<T, U>>>;
 
-/// A HashMap of indices of all hits and their distances to the query.
-pub type Hits<T> = HashMap<Index, T>;
+/// A Vec of tuples of index of hit and its distance to the query.
+type Hits<U> = Vec<(Index, U)>;
 
 /// CLAM-Augmented K-nearest-neighbors Entropy-scaling Search
 ///
@@ -31,9 +31,6 @@ pub struct Cakes<T: Number, U: Number> {
 
     /// The root Cluster of the search tree.
     pub root: Arc<Cluster<T, U>>,
-
-    /// The distance function being used.
-    pub metric: Arc<dyn Metric<T, U>>,
 }
 
 impl<T: Number, U: Number> std::fmt::Debug for Cakes<T, U> {
@@ -60,11 +57,7 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
         // build the search tree.
         let root = Cluster::new(Arc::clone(&dataset), bitvec![Lsb0, u8; 1], dataset.indices()).partition(&criteria);
         // return the struct
-        Cakes {
-            dataset: Arc::clone(&dataset),
-            root: Arc::new(root),
-            metric: dataset.metric(),
-        }
+        Cakes { dataset, root: Arc::new(root) }
     }
 
     /// Builds the tree in batches using the memory-fraction provided.
@@ -90,7 +83,6 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
             tree.into_par_iter()
                 .map(|cluster| {
                     let indices: Vec<_> = cluster.indices.par_iter().map(|&i| sample_indices[i]).collect();
-                    let argsamples: Vec<_> = cluster.argsamples.par_iter().map(|&i| sample_indices[i]).collect();
                     let argcenter = sample_indices[cluster.argcenter];
                     let argradius = sample_indices[cluster.argcenter];
 
@@ -99,7 +91,6 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                         name: cluster.name.clone(),
                         cardinality: indices.len(),
                         indices,
-                        argsamples,
                         argcenter,
                         argradius,
                         radius: cluster.radius,
@@ -195,7 +186,6 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                         name: cluster.name.clone(),
                         cardinality: indices.len(),
                         indices,
-                        argsamples: cluster.argsamples.clone(),
                         argcenter: cluster.argcenter,
                         argradius,
                         radius,
@@ -207,7 +197,6 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
             cakes = Cakes {
                 dataset: Arc::clone(&dataset),
                 root: restack_tree(unstacked_tree),
-                metric: cakes.metric,
             };
 
             flat_tree = cakes.root.flatten_tree();
@@ -222,6 +211,14 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
         U::from(2).unwrap() * self.root.radius
     }
 
+    fn distance(&self, x: &[T], y: &[T]) -> U {
+        self.dataset.metric().distance(x, y)
+    }
+
+    pub fn rnn_indices(&self, query: &[T], radius: Option<U>) -> Vec<Index> {
+        self.rnn(query, radius).into_iter().map(|(i, _)| i).collect()
+    }
+
     /// Performs accelerated rho-nearest search on the dataset and
     /// returns all hits inside a sphere of the given `radius` centered at the requested `query`.
     pub fn rnn(&self, query: &[T], radius: Option<U>) -> Hits<U> {
@@ -233,7 +230,7 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
         // parse the search radius
         let radius = radius.unwrap_or_else(U::zero);
         // if query ball has overlapping volume with the root, delegate to the recursive, private method.
-        if self.metric.distance(&self.root.center(), query) <= (radius + self.root.radius) {
+        if self.distance(&self.root.center(), query) <= (radius + self.root.radius) {
             self._tree_search(&self.root, query, radius)
         } else {
             // otherwise, return an empty Vec signifying no possible hits.
@@ -285,6 +282,10 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
         self.linear_search(query, radius, Some(indices))
     }
 
+    pub fn linear_search_indices(&self, query: &[T], radius: Option<U>, indices: Option<Vec<Index>>) -> Vec<Index> {
+        self.linear_search(query, radius, indices).into_iter().map(|(i, _)| i).collect()
+    }
+
     /// Naive search. Useful for leaf-search and for measuring acceleration from entropy-scaling search.
     pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: Option<Vec<Index>>) -> Hits<U> {
         let radius = radius.unwrap_or_else(U::zero);
@@ -298,7 +299,7 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
 
     // A convenient wrapper to get the distance from a given query to an indexed instance in the dataset.
     fn query_distance(&self, query: &[T], index: Index) -> U {
-        self.metric.distance(query, &self.dataset.instance(index))
+        self.distance(query, &self.dataset.instance(index))
     }
 }
 
@@ -346,7 +347,6 @@ pub fn restack_tree<T: Number, U: Number>(tree: Vec<Arc<Cluster<T, U>>>) -> Arc<
                     cardinality: indices.len(),
                     indices,
                     children,
-                    argsamples: cluster.argsamples.clone(),
                     argcenter: cluster.argcenter,
                     argradius: cluster.argradius,
                     radius: cluster.radius,
@@ -384,20 +384,20 @@ mod tests {
         let search = Cakes::build(Arc::clone(&dataset), None, None);
 
         let query = &[0., 1.];
-        let results = search.rnn(query, Some(1.5));
+        let results = search.rnn_indices(query, Some(1.5));
         assert_eq!(results.len(), 2);
-        assert!(results.contains_key(&0));
-        assert!(results.contains_key(&1));
-        assert!(!results.contains_key(&2));
-        assert!(!results.contains_key(&3));
+        assert!(results.contains(&0));
+        assert!(results.contains(&1));
+        assert!(!results.contains(&2));
+        assert!(!results.contains(&3));
 
         let query = Arc::new(search.dataset.instance(1));
-        let results = search.rnn(&query, None);
+        let results = search.rnn_indices(&query, None);
         assert_eq!(results.len(), 1);
-        assert!(!results.contains_key(&0));
-        assert!(results.contains_key(&1));
-        assert!(!results.contains_key(&2));
-        assert!(!results.contains_key(&3));
+        assert!(!results.contains(&0));
+        assert!(results.contains(&1));
+        assert!(!results.contains(&2));
+        assert!(!results.contains(&3));
     }
 
     #[test]
@@ -415,13 +415,13 @@ mod tests {
         for &q in dataset.indices()[0..10].iter() {
             let query = dataset.instance(q);
 
-            let cakes_results = search.rnn(&query, radius);
-            let naive_results = search.linear_search(&query, radius, None);
+            let cakes_results = search.rnn_indices(&query, radius);
+            let naive_results = search.linear_search_indices(&query, radius, None);
 
-            let no_extra = cakes_results.iter().all(|(i, _)| naive_results.contains_key(i));
+            let no_extra = cakes_results.iter().all(|i| naive_results.contains(i));
             assert!(no_extra, "had some extras {} / {}", naive_results.len(), cakes_results.len());
 
-            let no_misses = naive_results.iter().all(|(i, _)| cakes_results.contains_key(i));
+            let no_misses = naive_results.iter().all(|i| cakes_results.contains(i));
             assert!(no_misses, "had some misses {} / {}", naive_results.len(), cakes_results.len());
         }
     }

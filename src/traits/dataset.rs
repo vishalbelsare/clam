@@ -190,7 +190,7 @@ impl<T: Number, U: Number> std::fmt::Debug for RowMajor<T, U> {
     }
 }
 
-impl<T: Number, U: Number> RowMajor<T, U> {
+impl<T: 'static + Number, U: 'static + Number> RowMajor<T, U> {
     /// Create a new Dataset, using the provided data and metric, optionally use a cache.
     ///
     /// # Arguments
@@ -216,6 +216,10 @@ impl<T: Number, U: Number> RowMajor<T, U> {
     /// Returns the number of elements in the internal cache.
     pub fn cache_size(&self) -> Option<usize> {
         Some(self.cache.read().unwrap().len())
+    }
+
+    pub fn as_arc_dataset(self: Arc<Self>) -> Arc<dyn Dataset<T, U>> {
+        self
     }
 }
 

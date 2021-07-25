@@ -48,9 +48,6 @@ pub struct Cluster<T: Number, U: Number> {
     /// The `Indices` (a Vec<usize>) of instances in this `Cluster`.
     pub indices: Vec<Index>,
 
-    /// A subset of `indices' to use for fast, approximate calculations of center and radius.
-    pub argsamples: Vec<Index>,
-
     /// The `Index` of the center of the Cluster.
     pub argcenter: Index,
 
@@ -101,12 +98,10 @@ impl<T: Number, U: Number> Cluster<T, U> {
             cardinality: indices.len(),
             indices,
             children: None,
-            argsamples: vec![],
             argcenter: 0,
             argradius: 0,
             radius: U::zero(),
         };
-        cluster.argsamples = cluster.argsamples();
         cluster.argcenter = cluster.argcenter();
         cluster.argradius = cluster.argradius();
         cluster.radius = cluster.radius();
@@ -236,7 +231,6 @@ impl<T: Number, U: Number> Cluster<T, U> {
             name: self.name,
             cardinality: self.cardinality,
             indices: self.indices,
-            argsamples: self.argsamples,
             argcenter: self.argcenter,
             argradius: self.argradius,
             radius: self.radius,
@@ -277,14 +271,15 @@ impl<T: Number, U: Number> Cluster<T, U> {
 
     /// Returns the `Index` of the `center` of the `Cluster`.
     fn argcenter(&self) -> Index {
+        let argsamples = self.argsamples();
         let distances: Vec<U> = self
             .dataset
-            .pairwise_distances(&self.argsamples)
+            .pairwise_distances(&argsamples)
             .outer_iter()
             .map(|v| v.iter().cloned().sum())
             .collect();
         let (argcenter, _) = argmin(&distances);
-        self.argsamples[argcenter]
+        argsamples[argcenter]
     }
 
     /// Returns the `Index` of the `Instance` in the `Cluster` that is
@@ -330,7 +325,6 @@ mod tests {
             format!("name: {:?},", cluster.name),
             format!("cardinality: {:?},", cluster.cardinality),
             format!("indices: {:?},", cluster.indices),
-            format!("argsamples: {:?},", cluster.argsamples),
             format!("argcenter: {:?},", cluster.argcenter),
             format!("argradius: {:?},", cluster.argradius),
             format!("radius: {:?},", cluster.radius),
