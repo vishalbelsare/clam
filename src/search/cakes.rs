@@ -209,6 +209,14 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
         self.dataset.metric().distance(x, y)
     }
 
+    pub fn knn_indices(&self, query: &[T], k: usize) -> Vec<Index> {
+        self.knn(query, k).into_iter().map(|(i, _)| i).collect()
+    }
+
+    pub fn knn(&self, _query: &[T], _k: usize) -> Vec<(Index, U)> {
+        todo!()
+    }
+
     pub fn rnn_indices(&self, query: &[T], radius: Option<U>) -> Vec<Index> {
         self.rnn(query, radius).into_iter().map(|(i, _)| i).collect()
     }
@@ -216,11 +224,13 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
     /// Performs accelerated rho-nearest search on the dataset and
     /// returns all hits inside a sphere of the given `radius` centered at the requested `query`.
     pub fn rnn(&self, query: &[T], radius: Option<U>) -> Vec<(Index, U)> {
-        self.leaf_search(&query, radius, &self.tree_search(&query, radius))
+        let (mut definites, potentials) = self.tree_search(&query, radius);
+        definites.append(&mut self.leaf_search(&query, radius, &potentials));
+        definites
     }
 
-    /// Performs coarse-grained tree-search to find all clusters that could potentially contain hits.
-    pub fn tree_search(&self, query: &[T], radius: Option<U>) -> Vec<Index> {
+    /// Performs coarse-grained tree-search to find all instances that are definite or potential hits.
+    pub fn tree_search(&self, query: &[T], radius: Option<U>) -> (Vec<(Index, U)>, Vec<Index>) {
         // parse the search radius
         let radius = radius.unwrap_or_else(U::zero);
         // if query ball has overlapping volume with the root, delegate to the recursive, private method.
@@ -228,19 +238,19 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
         if distance <= (radius + self.root.radius) {
             self._tree_search(&self.root, query, radius, distance)
         } else {
-            // otherwise, return an empty Vec signifying no possible hits.
-            vec![]
+            // otherwise, there are no possible hits.
+            (Vec::new(), Vec::new())
         }
     }
 
-    fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &[T], radius: U, distance: U) -> Vec<Index> {
+    fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &[T], radius: U, distance: U) -> (Vec<(Index, U)>, Vec<Index>) {
         // Invariant: Entering this function means that the current cluster has overlapping volume with the query-ball.
         // Invariant: Triangle-inequality guarantees exactness of results from each recursive call.
-        let mut hits = match &cluster.children {
+        let (mut definites, potentials)= match &cluster.children {
             // There are children. Make recursive calls if necessary.
             Some((left_cluster, right_cluster)) => {
                 // get the two vectors of hits from up to two recursive calls.
-                let (mut left_hits, mut right_hits) = rayon::join(
+                let ((mut left_definites, mut left_potentials), (mut right_definites, mut right_potentials)) = rayon::join(
                     || {
                         // If the child has overlap with the query-ball, recurse into the child
                         let distance = self.distance(query, &left_cluster.center());
@@ -248,7 +258,7 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                             self._tree_search(left_cluster, query, radius, distance)
                         } else {
                             // otherwise return an empty vec.
-                            vec![]
+                            (Vec::new(), Vec::new())
                         }
                     },
                     || {
@@ -256,47 +266,44 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                         if distance <= (radius + right_cluster.radius) {
                             self._tree_search(right_cluster, query, radius, distance)
                         } else {
-                            vec![]
+                            (Vec::new(), Vec::new())
                         }
                     },
                 );
-                // combine both Vectors into one.
-                left_hits.append(&mut right_hits);
-                left_hits
+                left_definites.append(&mut right_definites);
+                left_potentials.append(&mut right_potentials);
+                (left_definites, left_potentials)
             }
             None => {
                 // There are no children so return the indices of the current cluster.
-                cluster.indices.clone()
+                (Vec::new(), cluster.indices.clone())
             }
         };
-        // TODO: No need to check this distance again in leaf_search.
+        // decide whether the cluster-center is a definite hit.
         if distance <= radius {
-            hits.push(cluster.argcenter);
+            definites.push((cluster.argcenter, distance));
         }
-        hits
+        (definites, potentials)
     }
 
     /// Exhaustively searches the clusters identified by tree-search and
     /// returns a Vec of indices of all hits and their distance from the query.
     pub fn leaf_search(&self, query: &[T], radius: Option<U>, indices: &[Index]) -> Vec<(Index, U)> {
-        self.linear_search(query, radius, Some(indices))
+        self.linear_search(query, radius, indices)
     }
 
-    pub fn linear_search_indices(&self, query: &[T], radius: Option<U>, indices: Option<&[Index]>) -> Vec<Index> {
+    pub fn linear_search_indices(&self, query: &[T], radius: Option<U>, indices: &[Index]) -> Vec<Index> {
         self.linear_search(query, radius, indices).into_iter().map(|(i, _)| i).collect()
     }
 
     /// Naive search. Useful for leaf-search and for measuring acceleration from entropy-scaling search.
-    pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: Option<&[Index]>) -> Vec<(Index, U)> {
+    pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: &[Index]) -> Vec<(Index, U)> {
         let radius = radius.unwrap_or_else(U::zero);
-        match indices {
-            Some(indices) => indices.to_vec(),
-            None => self.dataset.indices(),
-        }
-        .into_par_iter()
-        .map(|index| (index, self.distance(query, &self.dataset.instance(index))))
-        .filter(|(_, d)| *d <= radius)
-        .collect()
+        indices
+            .par_iter()
+            .map(|&index| (index, self.distance(query, &self.dataset.instance(index))))
+            .filter(|(_, d)| *d <= radius)
+            .collect()
     }
 }
 
@@ -411,7 +418,7 @@ mod tests {
             let query = dataset.instance(q);
 
             let cakes_results = search.rnn_indices(&query, radius);
-            let naive_results = search.linear_search_indices(&query, radius, None);
+            let naive_results = search.linear_search_indices(&query, radius, &dataset.indices());
 
             let no_extra = cakes_results.iter().all(|i| naive_results.contains(i));
             assert!(no_extra, "had some extras {} / {}", naive_results.len(), cakes_results.len());
