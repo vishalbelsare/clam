@@ -224,8 +224,9 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
         // parse the search radius
         let radius = radius.unwrap_or_else(U::zero);
         // if query ball has overlapping volume with the root, delegate to the recursive, private method.
-        if self.distance(&self.root.center(), query) <= (radius + self.root.radius) {
-            self._tree_search(&self.root, query, radius)
+        let distance = self.distance(&self.root.center(), query);
+        if distance <= (radius + self.root.radius) {
+            self._tree_search(&self.root, query, radius, distance)
         } else {
             // otherwise, return an empty Vec signifying no possible hits.
             vec![]
@@ -233,7 +234,7 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
     }
 
     //noinspection DuplicatedCode
-    fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &[T], radius: U) -> Vec<Index> {
+    fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &[T], radius: U, distance: U) -> Vec<Index> {
         // Invariant: Entering this function means that the current cluster has overlapping volume with the query-ball.
         // Invariant: Triangle-inequality guarantees exactness of results from each recursive call.
         let mut hits = match &cluster.children {
@@ -243,16 +244,18 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                 let (mut left, mut right) = rayon::join(
                     || {
                         // If the child has overlap with the query-ball, recurse into the child
-                        if self.distance(query, &left.center()) <= (radius + left.radius) {
-                            self._tree_search(&left, query, radius)
+                        let distance = self.distance(query, &left.center());
+                        if distance <= (radius + left.radius) {
+                            self._tree_search(&left, query, radius, distance)
                         } else {
                             // otherwise return an empty vec.
                             vec![]
                         }
                     },
                     || {
-                        if self.distance(query, &right.center()) <= (radius + right.radius) {
-                            self._tree_search(&right, query, radius)
+                        let distance = self.distance(query, &right.center());
+                        if distance <= (radius + right.radius) {
+                            self._tree_search(&right, query, radius, distance)
                         } else {
                             vec![]
                         }
@@ -267,7 +270,10 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                 cluster.indices.clone()
             }
         };
-        hits.push(cluster.argcenter);
+        // TODO: No need to check this distance again in leaf_search.
+        if distance <= radius {
+            hits.push(cluster.argcenter);
+        }
         hits
     }
 
