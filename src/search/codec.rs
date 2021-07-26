@@ -102,7 +102,7 @@ pub struct Codec<T: Number, U: Number> {
 }
 
 impl<T: Number, U: Number> Codec<T, U> {
-    pub fn from_cakes(_dataset: &Arc<dyn CompressibleDataset<T, U>>, _cakes: &Cakes<T, U>) -> Self {
+    pub fn from_cakes(dataset: &Arc<dyn CompressibleDataset<T, U>>, cakes: &Cakes<T, U>) -> Self {
         todo!()
     }
 

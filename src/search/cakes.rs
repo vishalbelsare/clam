@@ -6,12 +6,6 @@ use rayon::prelude::*;
 
 use crate::prelude::*;
 
-/// A Vec of Clusters that overlap with the query ball.
-type ClusterHits<T, U> = Vec<Arc<Cluster<T, U>>>;
-
-/// A Vec of tuples of index of hit and its distance to the query.
-type Hits<U> = Vec<(Index, U)>;
-
 /// CLAM-Augmented K-nearest-neighbors Entropy-scaling Search
 ///
 /// Provides tools for similarity search.
@@ -221,12 +215,12 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
 
     /// Performs accelerated rho-nearest search on the dataset and
     /// returns all hits inside a sphere of the given `radius` centered at the requested `query`.
-    pub fn rnn(&self, query: &[T], radius: Option<U>) -> Hits<U> {
+    pub fn rnn(&self, query: &[T], radius: Option<U>) -> Vec<(Index, U)> {
         self.leaf_search(&query, radius, self.tree_search(&query, radius))
     }
 
     /// Performs coarse-grained tree-search to find all clusters that could potentially contain hits.
-    pub fn tree_search(&self, query: &[T], radius: Option<U>) -> ClusterHits<T, U> {
+    pub fn tree_search(&self, query: &[T], radius: Option<U>) -> Vec<Index> {
         // parse the search radius
         let radius = radius.unwrap_or_else(U::zero);
         // if query ball has overlapping volume with the root, delegate to the recursive, private method.
@@ -239,17 +233,17 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
     }
 
     //noinspection DuplicatedCode
-    fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &[T], radius: U) -> ClusterHits<T, U> {
+    fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &[T], radius: U) -> Vec<Index> {
         // Invariant: Entering this function means that the current cluster has overlapping volume with the query-ball.
         // Invariant: Triangle-inequality guarantees exactness of results from each recursive call.
-        match &cluster.children {
+        let mut hits = match &cluster.children {
             // There are children. Make recursive calls if necessary.
             Some((left, right)) => {
                 // get the two vectors of hits from up to two recursive calls.
                 let (mut left, mut right) = rayon::join(
                     || {
                         // If the child has overlap with the query-ball, recurse into the child
-                        if self.query_distance(query, left.argcenter) <= (radius + left.radius) {
+                        if self.distance(query, &left.center()) <= (radius + left.radius) {
                             self._tree_search(&left, query, radius)
                         } else {
                             // otherwise return an empty vec.
@@ -257,7 +251,7 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                         }
                     },
                     || {
-                        if self.query_distance(query, right.argcenter) <= (radius + right.radius) {
+                        if self.distance(query, &right.center()) <= (radius + right.radius) {
                             self._tree_search(&right, query, radius)
                         } else {
                             vec![]
@@ -269,16 +263,17 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
                 left
             }
             None => {
-                // There are no children so return a Vec containing only the current cluster.
-                vec![Arc::clone(cluster)]
+                // There are no children so return the indices of the current cluster.
+                cluster.indices.clone()
             }
-        }
+        };
+        hits.push(cluster.argcenter);
+        hits
     }
 
     /// Exhaustively searches the clusters identified by tree-search and
     /// returns a HashMap of all hits and their distance from the query.
-    pub fn leaf_search(&self, query: &[T], radius: Option<U>, clusters: ClusterHits<T, U>) -> Hits<U> {
-        let indices = clusters.iter().map(|c| c.indices.clone()).into_iter().flatten().collect();
+    pub fn leaf_search(&self, query: &[T], radius: Option<U>, indices: Vec<Index>) -> Vec<(Index, U)> {
         self.linear_search(query, radius, Some(indices))
     }
 
@@ -287,19 +282,14 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
     }
 
     /// Naive search. Useful for leaf-search and for measuring acceleration from entropy-scaling search.
-    pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: Option<Vec<Index>>) -> Hits<U> {
+    pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: Option<Vec<Index>>) -> Vec<(Index, U)> {
         let radius = radius.unwrap_or_else(U::zero);
         let indices = indices.unwrap_or_else(|| self.dataset.indices());
         indices
             .par_iter()
-            .map(|&i| (i, self.query_distance(query, i)))
+            .map(|&i| (i, self.distance(query, &self.dataset.instance(i))))
             .filter(|(_, d)| *d <= radius)
             .collect()
-    }
-
-    // A convenient wrapper to get the distance from a given query to an indexed instance in the dataset.
-    fn query_distance(&self, query: &[T], index: Index) -> U {
-        self.distance(query, &self.dataset.instance(index))
     }
 }
 
@@ -313,9 +303,7 @@ fn child_names<T: Number, U: Number>(cluster: &Arc<Cluster<T, U>>) -> (ClusterNa
     (left_name, right_name)
 }
 
-/// Given an unstacked tree as a HashMap of Clusters, rebuild all
-/// parent-child relationships and return the root cluster.
-/// This consumed the given HashMap.
+/// Given an unstacked tree as a HashMap of Clusters, rebuild all parent-child relationships and return the root cluster.
 pub fn restack_tree<T: Number, U: Number>(tree: Vec<Arc<Cluster<T, U>>>) -> Arc<Cluster<T, U>> {
     let depth = tree.par_iter().map(|c| c.depth()).max().unwrap();
     let mut tree: HashMap<_, _> = tree.into_par_iter().map(|c| (c.name.clone(), c)).collect();
@@ -385,7 +373,7 @@ mod tests {
 
         let query = &[0., 1.];
         let results = search.rnn_indices(query, Some(1.5));
-        assert_eq!(results.len(), 2);
+        assert!(results.len() <= 2);
         assert!(results.contains(&0));
         assert!(results.contains(&1));
         assert!(!results.contains(&2));
