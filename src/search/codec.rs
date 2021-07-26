@@ -102,7 +102,7 @@ pub struct Codec<T: Number, U: Number> {
 }
 
 impl<T: Number, U: Number> Codec<T, U> {
-    pub fn from_cakes(dataset: &Arc<dyn CompressibleDataset<T, U>>, cakes: &Cakes<T, U>) -> Self {
+    pub fn from_cakes(_dataset: &Arc<dyn CompressibleDataset<T, U>>, _cakes: &Cakes<T, U>) -> Self {
         todo!()
     }
 
@@ -134,11 +134,11 @@ impl<T: Number, U: Number> Codec<T, U> {
         }
     }
 
-    fn _tree_search(&self, cluster: &Arc<PackableCluster<U>>, query: &[T], radius: U) -> ClusterHits<U> {
+    fn _tree_search(&self, _cluster: &Arc<PackableCluster<U>>, _query: &[T], _radius: U) -> ClusterHits<U> {
         todo!()
     }
 
-    pub fn leaf_search(&self, query: &[T], radius: Option<U>, clusters: ClusterHits<U>) -> Hits<T, U> {
+    pub fn leaf_search(&self, _query: &[T], _radius: Option<U>, _clusters: ClusterHits<U>) -> Hits<T, U> {
         todo!()
     }
 

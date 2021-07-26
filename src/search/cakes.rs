@@ -216,7 +216,7 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
     /// Performs accelerated rho-nearest search on the dataset and
     /// returns all hits inside a sphere of the given `radius` centered at the requested `query`.
     pub fn rnn(&self, query: &[T], radius: Option<U>) -> Vec<(Index, U)> {
-        self.leaf_search(&query, radius, self.tree_search(&query, radius))
+        self.leaf_search(&query, radius, &self.tree_search(&query, radius))
     }
 
     /// Performs coarse-grained tree-search to find all clusters that could potentially contain hits.
@@ -233,37 +233,36 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
         }
     }
 
-    //noinspection DuplicatedCode
     fn _tree_search(&self, cluster: &Arc<Cluster<T, U>>, query: &[T], radius: U, distance: U) -> Vec<Index> {
         // Invariant: Entering this function means that the current cluster has overlapping volume with the query-ball.
         // Invariant: Triangle-inequality guarantees exactness of results from each recursive call.
         let mut hits = match &cluster.children {
             // There are children. Make recursive calls if necessary.
-            Some((left, right)) => {
+            Some((left_cluster, right_cluster)) => {
                 // get the two vectors of hits from up to two recursive calls.
-                let (mut left, mut right) = rayon::join(
+                let (mut left_hits, mut right_hits) = rayon::join(
                     || {
                         // If the child has overlap with the query-ball, recurse into the child
-                        let distance = self.distance(query, &left.center());
-                        if distance <= (radius + left.radius) {
-                            self._tree_search(&left, query, radius, distance)
+                        let distance = self.distance(query, &left_cluster.center());
+                        if distance <= (radius + left_cluster.radius) {
+                            self._tree_search(left_cluster, query, radius, distance)
                         } else {
                             // otherwise return an empty vec.
                             vec![]
                         }
                     },
                     || {
-                        let distance = self.distance(query, &right.center());
-                        if distance <= (radius + right.radius) {
-                            self._tree_search(&right, query, radius, distance)
+                        let distance = self.distance(query, &right_cluster.center());
+                        if distance <= (radius + right_cluster.radius) {
+                            self._tree_search(right_cluster, query, radius, distance)
                         } else {
                             vec![]
                         }
                     },
                 );
                 // combine both Vectors into one.
-                left.append(&mut right);
-                left
+                left_hits.append(&mut right_hits);
+                left_hits
             }
             None => {
                 // There are no children so return the indices of the current cluster.
@@ -278,24 +277,26 @@ impl<T: 'static + Number, U: 'static + Number> Cakes<T, U> {
     }
 
     /// Exhaustively searches the clusters identified by tree-search and
-    /// returns a HashMap of all hits and their distance from the query.
-    pub fn leaf_search(&self, query: &[T], radius: Option<U>, indices: Vec<Index>) -> Vec<(Index, U)> {
+    /// returns a Vec of indices of all hits and their distance from the query.
+    pub fn leaf_search(&self, query: &[T], radius: Option<U>, indices: &[Index]) -> Vec<(Index, U)> {
         self.linear_search(query, radius, Some(indices))
     }
 
-    pub fn linear_search_indices(&self, query: &[T], radius: Option<U>, indices: Option<Vec<Index>>) -> Vec<Index> {
+    pub fn linear_search_indices(&self, query: &[T], radius: Option<U>, indices: Option<&[Index]>) -> Vec<Index> {
         self.linear_search(query, radius, indices).into_iter().map(|(i, _)| i).collect()
     }
 
     /// Naive search. Useful for leaf-search and for measuring acceleration from entropy-scaling search.
-    pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: Option<Vec<Index>>) -> Vec<(Index, U)> {
+    pub fn linear_search(&self, query: &[T], radius: Option<U>, indices: Option<&[Index]>) -> Vec<(Index, U)> {
         let radius = radius.unwrap_or_else(U::zero);
-        let indices = indices.unwrap_or_else(|| self.dataset.indices());
-        indices
-            .par_iter()
-            .map(|&i| (i, self.distance(query, &self.dataset.instance(i))))
-            .filter(|(_, d)| *d <= radius)
-            .collect()
+        match indices {
+            Some(indices) => indices.to_vec(),
+            None => self.dataset.indices(),
+        }
+        .into_par_iter()
+        .map(|index| (index, self.distance(query, &self.dataset.instance(index))))
+        .filter(|(_, d)| *d <= radius)
+        .collect()
     }
 }
 
