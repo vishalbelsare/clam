@@ -1,0 +1,84 @@
+[package]
+name = "abd-clam"
+version = "0.32.0"
+authors = [
+    "Najib Ishaq <najib_ishaq@zoho.com>",
+    "Tom Howard <info@tomhoward.codes>",
+    "Noah Daniels <noah_daniels@uri.edu>",
+    "Morgan Prior <morgan_prior@uri.edu>",
+    "Isaac Chen <ijchen@uri.edu>",
+    "Oliver McLaughlin <olwmcjp@gmail.com>",
+]
+edition = "2021"
+rust-version = "1.81"  # using: `total_cmp`
+description = "Clustering, Learning and Approximation with Manifolds"
+license = "MIT"
+readme = "./README.md"
+documentation = "https://docs.rs/abd-clam/latest/abd_clam/"
+repository = "https://github.com/URI-ABD/clam"
+homepage = "https://github.com/URI-ABD/clam"
+
+# Publishing lock.
+# When you're ready to start publishing, set publish to true
+# and update the release github action.
+publish = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+distances = { workspace = true }
+rayon = { workspace = true }
+rand = { workspace = true }
+ftlog = { workspace = true }
+
+# For:
+#  - IO from npy files
+#  - arrays in CHAODA
+ndarray = { workspace = true, optional = true }
+ndarray-npy = { workspace = true, optional = true }
+
+# For:
+#  - CHAODA
+smartcore = { version = "0.4", features = ["serde"], optional = true }
+
+# For:
+#  - MSA
+stringzilla = { workspace = true, optional = true }
+
+# For:
+#  - Disk I/O for most clusters and datasets
+serde = { workspace = true, optional = true }
+bitcode = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
+# - Reading and writing CSV files from clusters' properties and some datasets
+csv = { workspace = true , optional = true }
+
+[dev-dependencies]
+symagen = { workspace = true }
+bitcode = { workspace = true }
+criterion = { version = "0.5", features = ["html_reports"] }
+tempdir = "0.3.7"
+float-cmp = "0.10.0"
+test-case = "3.2.1"
+statistical = "1.0.0"
+
+[features]
+disk-io = ["dep:serde", "dep:csv", "dep:bitcode", "dep:flate2", "dep:ndarray", "dep:ndarray-npy"]
+chaoda = ["dep:smartcore"]
+mbed = ["chaoda"]
+msa = ["dep:stringzilla"]
+all = ["disk-io", "chaoda", "mbed", "msa"]
+
+[[bench]]
+name = "vector_search"
+harness = false
+
+[[bench]]
+name = "genomic_search"
+harness = false
+required-features = ["msa"]
+
+[[bench]]
+name = "ann_benchmarks"
+harness = false
+required-features = ["disk-io"]

@@ -1,28 +1,41 @@
 name: Tests
 
-on: [push]
+on:
+  workflow_call:
+  push:
+    branches-ignore:
+      - main
+      - master
+      - dev
+  pull_request:
+    branches:
+      - main
+      - master
+      - dev
+
+permissions:
+  contents: read
 
 jobs:
-  cargo:
+  fmt:
+    name: Formatting
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build
-    - name: Run tests
-      run: cargo test
-  
-  unittest:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Python
-        uses: actions/setup-python@v1
+      - uses: actions/checkout@v4
+      - uses: earthly/actions-setup@v1
         with:
-          python-version: 3.7
-      - name: Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Run
-        run: python -m unittest discover
+          version: v0.8.4
+      - name: Fmt
+        run: earthly +fmt
+
+  test:
+    needs: fmt
+    name: Testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: earthly/actions-setup@v1
+        with:
+          version: v0.8.4
+      - name: Test
+        run: earthly +test

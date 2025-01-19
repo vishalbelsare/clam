@@ -1,85 +1,44 @@
-# URI-ABD: Clustered Learning of Approximate Manifolds
+# CLAM: Clustering, Learning and Approximation with Manifolds
 
-## Installation
+The Rust implementation of CLAM.
 
-### Docker
+As of writing this document, the project is still in a pre-1.0 state.
+This means that the API is not yet stable and breaking changes may occur frequently.
 
-```
-docker build -t clam .
-```
+## Rust Crates and Python Packages
 
-### Python
+This repository is a workspace that contains the following crates:
 
-```bash
-python3 -m pip install pyclam
-```
+- `abd-clam`: The main CLAM library. See [here](crates/abd-clam/README.md) for more information.
+- `distances`: Provides various distance functions and the `Number` trait. See [here](crates/distances/README.md) for more information.
 
-## Usage
+and the following Python packages:
 
-### Docker
+- `abd-distances`: A Python wrapper for the `distances` crate, providing drop-in replacements for distance function `scipy.spatial.distance`. See [here](python/distances/README.md) for more information.
 
-```
-docker run clam --help
-```
+## Reproducing Results from Papers
 
-### Python Scripting
+This repository contains CLI tools to reproduce results from some of our papers.
 
-```python
-from pyclam import Manifold
-from pyclam import Search
-from pyclam import criterion
-from pyclam import datasets
+### CAKES
 
-# Get the data.
-data, _ = datasets.bullseye()
-# data is a numpy.ndarray in this case but it could just as easily be a numpy.memmap if your data does fit in RAM.
-# We used numpy memmaps for the research, though they impose file-IO costs.
+This paper is currently under review at SIMODS.
+See [here](benches/cakes/README.md) for running Rust code to reproduce the results for the CAKES algorithms, and [here](benches/py-cakes/README.md) for running some Python code to generate plots from the results of running the Rust code.
 
-search = Search(data, 'euclidean')
-# The Search class provides the functionality described in our CHESS paper.
-# TODO: Provide link to CHESS paper
+### MSA
 
-search.build(max_depth=10)
-# Build the search tree to depth of 10.
-# This method can be called again with a higher depth, if needed.
+TODO
 
-query, radius = data[0], 0.5
-rnn_results = search.rnn(query, radius)
-# This is how we perform rho-nearest neighbors search with radius 0.5 around the query.
+### PANCAKES
 
-knn_results = search.knn(query, 10)
-# This is how to perform k-nearest neighbors search for the 10 nearest neighbors of query.
+TODO
 
-# TODO: Provide snippets for using CHAODA
+## Publications
 
-# You can also directly use the Manifold functionality provided by CLAM.
+- [CHESS](https://arxiv.org/abs/1908.08551): Hierarchical Clustering and Ranged Nearest Neighbors Search
+- [CHAODA](https://arxiv.org/abs/2103.11774): Anomaly Detection
+- [PANCAKES](https://arxiv.org/pdf/2409.12161): Compression and Compressive Search
 
-manifold = Manifold(data, 'euclidean')
-# Any metric allowed by scipy's cdist function is allowed in Manifold.
-# You can also define your own distance function. It will work so long as scipy allows it.
+## Citation
 
-manifold.build(
-    criterion.MaxDepth(20),  # build the tree to a maximum depth of 20
-    criterion.MinRadius(0.25),  # clusters with radius less than 0.25 cannot be partitioned.
-    criterion.Layer(6),  # use the clusters ad depth 6 to build a Graph.
-    criterion.Leaves(),  # use the leaves of the tree to build another Graph.
-)
-# Manifold.build can optionally take any number of criteria.
-# pyclam.criterion defines some criteria that we have used in research.
-# You are free to define your own.
-# Take a look at pyclam/criterion.py for hints of how to define custom criteria.
-```
-
-The Manifold class relies on the Graph and Cluster classes.
-You can import these and work with them directly if you so choose.
-The classes and methods are all very well documented.
-Go crazy.
-
-## Contributing
-
-Pull requests and bug reports are welcome.
-For major changes, please open an issue to discuss what you would like to change.
-
-## License
-
-[MIT](LICENSE)
+TODO
